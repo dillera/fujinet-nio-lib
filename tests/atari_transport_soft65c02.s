@@ -22,7 +22,7 @@ saved_ptr1: .res 2
 poll_length_high: .res 1
 q_reply: .res 4
 malformed_kind: .res 1
-_test_result: .res 118
+_test_result: .res 121
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -52,6 +52,15 @@ _test_func:
         sta pattern_failure
         sta poll_length_high
         jsr _fn_transport_init
+        ; PROC notification is a latch only: it must not enter SIOV or alter
+        ; transaction state; foreground exchange still begins with W/P.
+        jsr _fn_atari_proc_notify
+        lda step
+        sta _test_result+118
+        lda outstanding
+        sta _test_result+119
+        lda proc_ready
+        sta _test_result+120
         jsr _fn_atari_max_payload
         sta _test_result+6
         stx _test_result+7
@@ -149,6 +158,7 @@ _test_func:
         sta response_guard_lo
         lda #$b2
         sta response_guard_hi
+        jsr fill_512_request
         lda #$ff
         sta __fn_transport_ctx+4
         lda #$01
@@ -918,6 +928,7 @@ capacity_w_512:
         ldx #'W'
         lda #$80
         jsr check_sized_dcb
+        jsr verify_512_request
         inc step
         lda #1
         sta $0303
@@ -1261,6 +1272,36 @@ put_q_reply:
 
 ; Fill exactly two 256-byte pages with i ^ (i >> 8) ^ $a5 through the DCB
 ; buffer without changing the transport's zero-page request/response pointers.
+fill_512_request:
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda #<request_large
+        sta ptr1
+        lda #>request_large
+        sta ptr1+1
+        ldy #0
+@page_one:
+        tya
+        eor #$a5
+        sta (ptr1),y
+        iny
+        bne @page_one
+        inc ptr1+1
+        ldy #0
+@page_two:
+        tya
+        eor #$a4
+        sta (ptr1),y
+        iny
+        bne @page_two
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
+        rts
+
 fill_512_reply:
         lda ptr1
         sta saved_ptr1
@@ -1294,6 +1335,17 @@ fill_512_reply:
 ; Independently calculate the expected byte at every offset after the
 ; production R has completed.  Continue after mismatches so every byte is
 ; evaluated; pattern_failure is separate from the sticky DCB failure latch.
+verify_512_request:
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda $0304
+        sta ptr1
+        lda $0305
+        sta ptr1+1
+        jmp verify_512_buffer
+
 verify_512_reply:
         lda ptr1
         sta saved_ptr1
@@ -1303,6 +1355,7 @@ verify_512_reply:
         sta ptr1
         lda #>response_large
         sta ptr1+1
+verify_512_buffer:
         ldx #0
 @page:
         ldy #0

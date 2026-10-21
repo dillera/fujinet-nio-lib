@@ -87,11 +87,10 @@ side also has to follow the Atari SIO completion sequence precisely:
 - NetSIO credit/update frames are connection-management traffic; they must not
   be treated as an active SIO command.
 
-The Atari library reads response data in fixed-size SIO chunks until it sees a
-complete SLIP frame. The NIO NetSIO bridge sends the requested chunk size,
-padding only the final short chunk and retaining any queued response bytes that
-did not fit. This avoids sending a full maximum-size SIO transfer for every
-small FujiBus response.
+The library sends one complete packet-native `W` and reads one complete,
+ready-length `R`; a bridge must neither chunk, pad, nor SLIP-frame either
+payload. A queued response remains available until the matching exact-length
+`R` is accepted.
 
 ## MS-DOS Backends
 
