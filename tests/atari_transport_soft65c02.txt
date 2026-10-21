@@ -1,7 +1,7 @@
 memory load atari "${BINARY_PATH}"
 symbols load "${SYMBOLS_PATH}"
 registers flush
-run $init_harness until (CP = $end_init_harness OR cycle_count > 120000)
+run $init_harness until (CP = $end_init_harness OR cycle_count > 250000)
 assert CP = $end_init_harness $$transport completed$$
 assert $_test_result = 0x06 $$accepted W times out after pending polls$$
 assert $_test_result + 1 = 0x00 $$next exchange recovers then succeeds$$
@@ -77,3 +77,36 @@ assert $_test_result + 70 = 0xD7 $$Q buffer trailing canary is unchanged$$
 assert $_test_result + 71 = 0xC1 $$Q buffer trailing state byte 0 is unchanged$$
 assert $_test_result + 72 = 0xC2 $$Q buffer trailing state byte 1 is unchanged$$
 assert $_test_result + 73 = 0xC3 $$Q buffer trailing state byte 2 is unchanged$$
+assert $_test_result + 74 = 0x06 $$unknown P state reaches the local timeout$$
+assert $_test_result + 75 = 0x01 $$unknown P state retains the accepted W$$
+assert $_test_result + 76 = 0x00 $$unknown P state recovers then succeeds$$
+assert $_test_result + 77 = 0x42 $$unknown P recovery P/R precedes new W/P/R$$
+assert $_test_result + 78 = 0x00 $$unknown P calls had exact DCB shapes$$
+assert $_test_result + 79 = 0xFC $$unknown P final response byte 0 is exact$$
+assert $_test_result + 80 = 0x01 $$unknown P final response byte 1 is exact$$
+assert $_test_result + 81 = 0x04 $$unknown P final response byte 2 is exact$$
+assert $_test_result + 82 = 0xFF $$unknown P final response byte 3 is exact$$
+assert $_test_result + 83 = 0x04 $$unknown P final response length is exact$$
+assert $_test_result + 84 = 0x00 $$unknown P final response high length is zero$$
+assert $_test_result + 85 = 0x06 $$zero-length READY reaches the local timeout$$
+assert $_test_result + 86 = 0x01 $$zero-length READY retains the accepted W$$
+assert $_test_result + 87 = 0x00 $$zero-length READY recovers then succeeds$$
+assert $_test_result + 88 = 0x42 $$zero-length READY recovery P/R precedes new W/P/R$$
+assert $_test_result + 89 = 0x00 $$zero-length READY calls had exact DCB shapes$$
+assert $_test_result + 90 = 0xFC $$zero-length READY final response byte 0 is exact$$
+assert $_test_result + 91 = 0x01 $$zero-length READY final response byte 1 is exact$$
+assert $_test_result + 92 = 0x04 $$zero-length READY final response byte 2 is exact$$
+assert $_test_result + 93 = 0xFF $$zero-length READY final response byte 3 is exact$$
+assert $_test_result + 94 = 0x04 $$zero-length READY final response length is exact$$
+assert $_test_result + 95 = 0x00 $$zero-length READY final response high length is zero$$
+assert $_test_result + 96 = 0x06 $$failed P SIOV reaches the local timeout$$
+assert $_test_result + 97 = 0x01 $$failed P SIOV retains the accepted W$$
+assert $_test_result + 98 = 0x00 $$failed P SIOV recovers then succeeds$$
+assert $_test_result + 99 = 0x42 $$failed P recovery P/R precedes new W/P/R$$
+assert $_test_result + 100 = 0x00 $$failed P calls had exact DCB shapes$$
+assert $_test_result + 101 = 0xFC $$failed P final response byte 0 is exact$$
+assert $_test_result + 102 = 0x01 $$failed P final response byte 1 is exact$$
+assert $_test_result + 103 = 0x04 $$failed P final response byte 2 is exact$$
+assert $_test_result + 104 = 0xFF $$failed P final response byte 3 is exact$$
+assert $_test_result + 105 = 0x04 $$failed P final response length is exact$$
+assert $_test_result + 106 = 0x00 $$failed P final response high length is zero$$

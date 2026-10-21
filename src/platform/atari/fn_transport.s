@@ -167,6 +167,8 @@ nio_poll:
         beq @poll_ready
         cmp #1
         beq @poll_bad
+        cmp #0
+        bne @poll_bad
         lda #0
         sta outstanding
 @poll_bad:

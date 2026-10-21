@@ -21,7 +21,8 @@ expected_length_hi: .res 1
 saved_ptr1: .res 2
 poll_length_high: .res 1
 q_reply: .res 4
-_test_result: .res 74
+malformed_kind: .res 1
+_test_result: .res 107
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -269,6 +270,69 @@ _test_func:
         sta _test_result+72
         lda reply_state+2
         sta _test_result+73
+        ; A malformed P or an SIO error must not turn an accepted W into an
+        ; idle transaction.  Each next exchange first recovers the retained
+        ; response with P/R, then sends its new W/P/R exchange.
+        jsr set_small_context
+        lda #5
+        sta mode
+        lda #0
+        sta malformed_kind
+        sta step
+        sta failure
+        sta pattern_failure
+        jsr _fn_transport_init
+        jsr _fn_transport_exchange
+        sta _test_result+74
+        lda outstanding
+        sta _test_result+75
+        jsr _fn_transport_exchange
+        sta _test_result+76
+        lda step
+        sta _test_result+77
+        lda failure
+        sta _test_result+78
+        jsr save_malformed_response_0
+        ; READY with a zero byte count is also malformed and retains W.
+        jsr set_small_context
+        lda #1
+        sta malformed_kind
+        lda #0
+        sta step
+        sta failure
+        sta pattern_failure
+        jsr _fn_transport_init
+        jsr _fn_transport_exchange
+        sta _test_result+85
+        lda outstanding
+        sta _test_result+86
+        jsr _fn_transport_exchange
+        sta _test_result+87
+        lda step
+        sta _test_result+88
+        lda failure
+        sta _test_result+89
+        jsr save_malformed_response_1
+        ; A failed SIOV P has the same retain/recover behavior.
+        jsr set_small_context
+        lda #2
+        sta malformed_kind
+        lda #0
+        sta step
+        sta failure
+        sta pattern_failure
+        jsr _fn_transport_init
+        jsr _fn_transport_exchange
+        sta _test_result+96
+        lda outstanding
+        sta _test_result+97
+        jsr _fn_transport_exchange
+        sta _test_result+98
+        lda step
+        sta _test_result+99
+        lda failure
+        sta _test_result+100
+        jsr save_malformed_response_2
         rts
 
 ; X=expected command, A=expected DSTATS.  Bad DCB is a sticky test failure.
@@ -343,6 +407,55 @@ set_large_context:
         sta __fn_transport_ctx+7
         rts
 
+set_small_context:
+        lda #<request
+        sta __fn_transport_ctx
+        lda #>request
+        sta __fn_transport_ctx+1
+        lda #<response
+        sta __fn_transport_ctx+2
+        lda #>response
+        sta __fn_transport_ctx+3
+        lda #4
+        sta __fn_transport_ctx+4
+        lda #0
+        sta __fn_transport_ctx+5
+        lda #8
+        sta __fn_transport_ctx+6
+        lda #0
+        sta __fn_transport_ctx+7
+        rts
+
+; Record all delivered response bytes and the returned 16-bit length.  The
+; three fixed locations keep the script assertions independent per bad-P case.
+save_malformed_response_0:
+        ldx #79
+        jmp save_malformed_response
+save_malformed_response_1:
+        ldx #90
+        jmp save_malformed_response
+save_malformed_response_2:
+        ldx #101
+save_malformed_response:
+        lda response
+        sta _test_result,x
+        inx
+        lda response+1
+        sta _test_result,x
+        inx
+        lda response+2
+        sta _test_result,x
+        inx
+        lda response+3
+        sta _test_result,x
+        inx
+        lda __fn_transport_ctx+8
+        sta _test_result,x
+        inx
+        lda __fn_transport_ctx+9
+        sta _test_result,x
+        rts
+
 ; A=state and X/Y=reply length for a P reply.
 put_poll:
         pha
@@ -382,7 +495,15 @@ fake_siov:
         beq @interrupted
         cmp #3
         beq @capacity
+        cmp #4
+        bne :+
         jmp q_fake
+:
+        cmp #5
+        bne :+
+        jmp malformed_p_fake
+:
+        jmp bad
 @timeout:
         jmp timeout_fake
 @rejected:
@@ -817,6 +938,70 @@ capacity_recover_oversized:
         sta poll_length_high
         lda #2
         ldx #1
+        jsr put_poll
+        inc step
+        rts
+
+; Mode 5: no malformed P result may release an accepted W.  The fake peer
+; returns the same bad P result for the complete local poll deadline, then
+; insists on recovery P/R before accepting a new W.
+malformed_p_fake:
+        ldx step
+        cpx #0
+        bne :+
+        jmp first_w
+:
+        cpx #61
+        bcs :+
+        jmp malformed_bad_p
+:
+        cpx #61
+        bne :+
+        jmp recovery_p
+:
+        cpx #62
+        bne :+
+        jmp recovery_r
+:
+        cpx #63
+        bne :+
+        jmp accepted_w
+:
+        cpx #64
+        bne :+
+        jmp accepted_p
+:
+        cpx #65
+        bne :+
+        jmp accepted_r
+:
+        jmp bad
+malformed_bad_p:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda malformed_kind
+        beq malformed_unknown_p
+        cmp #1
+        beq malformed_zero_ready_p
+        ; SIOV failure before a poll payload is received.
+        inc step
+        lda #0
+        sta $0303
+        rts
+malformed_unknown_p:
+        lda #0
+        sta poll_length_high
+        lda #3
+        ldx #4
+        jsr put_poll
+        inc step
+        rts
+malformed_zero_ready_p:
+        lda #0
+        sta poll_length_high
+        lda #2
+        ldx #0
         jsr put_poll
         inc step
         rts
