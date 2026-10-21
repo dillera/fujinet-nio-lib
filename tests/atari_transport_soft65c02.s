@@ -5,13 +5,21 @@
 __fn_transport_ctx: .res 10
 request: .res 4
 response: .res 8
+request_guard_lo: .res 1
+request_large: .res 512
+request_guard_hi: .res 1
+response_guard_lo: .res 1
+response_large: .res 512
+response_guard_hi: .res 1
 step: .res 1
 mode: .res 1
 failure: .res 1
 expected_dstats: .res 1
+expected_length_lo: .res 1
+expected_length_hi: .res 1
 saved_ptr1: .res 2
 poll_length_high: .res 1
-_test_result: .res 28
+_test_result: .res 47
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -117,11 +125,97 @@ _test_func:
         sta _test_result+26
         lda __fn_transport_ctx+9
         sta _test_result+27
+        ; 511/512-byte transfers must be exact, 513-byte requests must never
+        ; enter SIOV, and an oversized reply must remain outstanding.
+        jsr set_large_context
+        lda #3
+        sta mode
+        lda #0
+        sta step
+        sta failure
+        sta poll_length_high
+        lda #$a1
+        sta request_guard_lo
+        lda #$a2
+        sta request_guard_hi
+        lda #$b1
+        sta response_guard_lo
+        lda #$b2
+        sta response_guard_hi
+        lda #$ff
+        sta __fn_transport_ctx+4
+        lda #$01
+        sta __fn_transport_ctx+5
+        jsr _fn_transport_exchange
+        sta _test_result+28
+        lda __fn_transport_ctx+8
+        sta _test_result+29
+        lda __fn_transport_ctx+9
+        sta _test_result+30
+        lda #0
+        sta __fn_transport_ctx+4
+        lda #2
+        sta __fn_transport_ctx+5
+        jsr _fn_transport_exchange
+        sta _test_result+31
+        lda __fn_transport_ctx+8
+        sta _test_result+32
+        lda __fn_transport_ctx+9
+        sta _test_result+33
+        lda #1
+        sta __fn_transport_ctx+4
+        lda #2
+        sta __fn_transport_ctx+5
+        jsr _fn_transport_exchange
+        sta _test_result+34
+        lda step
+        sta _test_result+35
+        lda #0
+        sta __fn_transport_ctx+4
+        lda #2
+        sta __fn_transport_ctx+5
+        jsr _fn_transport_exchange
+        sta _test_result+36
+        jsr _fn_transport_exchange
+        sta _test_result+37
+        lda step
+        sta _test_result+38
+        lda failure
+        sta _test_result+39
+        lda response_large
+        sta _test_result+40
+        lda response_large+255
+        sta _test_result+41
+        lda response_large+511
+        sta _test_result+42
+        lda request_guard_lo
+        sta _test_result+43
+        lda request_guard_hi
+        sta _test_result+44
+        lda response_guard_lo
+        sta _test_result+45
+        lda response_guard_hi
+        sta _test_result+46
         rts
 
 ; X=expected command, A=expected DSTATS.  Bad DCB is a sticky test failure.
 check_dcb:
         sta expected_dstats
+        cpx #'P'
+        beq @poll
+        lda #4
+        sta expected_length_lo
+        lda #0
+        sta expected_length_hi
+        jmp check_dcb_common
+@poll:  lda #3
+        sta expected_length_lo
+        lda #0
+        sta expected_length_hi
+        jmp check_dcb_common
+check_sized_dcb:
+        sta expected_dstats
+check_dcb_common:
         lda $0300
         cmp #$7f
         bne bad
@@ -131,25 +225,22 @@ check_dcb:
         lda expected_dstats
         cmp $0303
         bne bad
-        cpx #'P'
-        beq fixed_poll
         lda $0308
-        cmp #4
+        cmp expected_length_lo
         bne bad
         lda $0309
+        cmp expected_length_hi
         bne bad
+        cpx #'P'
+        beq fixed_poll
         lda $030a
-        cmp #4
+        cmp expected_length_lo
         bne bad
         lda $030b
+        cmp expected_length_hi
         bne bad
         rts
 fixed_poll:
-        lda $0308
-        cmp #3
-        bne bad
-        lda $0309
-        bne bad
         lda $030a
         bne bad
         lda $030b
@@ -159,6 +250,21 @@ bad:    lda step
         clc
         adc #1
         sta failure
+        rts
+
+set_large_context:
+        lda #<request_large
+        sta __fn_transport_ctx
+        lda #>request_large
+        sta __fn_transport_ctx+1
+        lda #<response_large
+        sta __fn_transport_ctx+2
+        lda #>response_large
+        sta __fn_transport_ctx+3
+        lda #0
+        sta __fn_transport_ctx+6
+        lda #2
+        sta __fn_transport_ctx+7
         rts
 
 ; A=state and X/Y=reply length for a P reply.
@@ -196,11 +302,15 @@ fake_siov:
         beq @timeout
         cmp #1
         beq @rejected
-        jmp interrupted_fake
+        cmp #2
+        beq @interrupted
+        jmp capacity_fake
 @timeout:
         jmp timeout_fake
 @rejected:
         jmp rejected_fake
+@interrupted:
+        jmp interrupted_fake
 timeout_fake:
         ldx step
         cpx #0
@@ -505,6 +615,159 @@ interrupted_recovery_r:
         inc step
         lda #1
         sta $0303
+        rts
+
+; Mode 3: exact 511/512-byte DCB transfers, local 513-byte request rejection,
+; then a 513-byte reply that must remain outstanding without an R.
+capacity_fake:
+        ldx step
+        cpx #0
+        bne :+
+        jmp capacity_w_511
+:
+        cpx #1
+        bne :+
+        jmp capacity_ready_512
+:
+        cpx #2
+        bne :+
+        jmp capacity_r_512
+:
+        cpx #3
+        bne :+
+        jmp capacity_w_512
+:
+        cpx #4
+        bne :+
+        jmp capacity_ready_512
+:
+        cpx #5
+        bne :+
+        jmp capacity_r_512
+:
+        cpx #6
+        bne :+
+        jmp capacity_w_oversized
+:
+        cpx #7
+        bne :+
+        jmp capacity_poll_oversized
+:
+        cpx #8
+        bne :+
+        jmp capacity_recover_oversized
+:
+        jmp bad
+capacity_w_511:
+        lda #$ff
+        sta expected_length_lo
+        lda #$01
+        sta expected_length_hi
+        ldx #'W'
+        lda #$80
+        jsr check_sized_dcb
+        inc step
+        lda #1
+        sta $0303
+        rts
+capacity_w_512:
+        lda #0
+        sta expected_length_lo
+        lda #2
+        sta expected_length_hi
+        ldx #'W'
+        lda #$80
+        jsr check_sized_dcb
+        inc step
+        lda #1
+        sta $0303
+        rts
+capacity_ready_512:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda #2
+        sta poll_length_high
+        lda #2
+        ldx #0
+        jsr put_poll
+        inc step
+        rts
+capacity_r_512:
+        lda #0
+        sta expected_length_lo
+        lda #2
+        sta expected_length_hi
+        ldx #'R'
+        lda #$40
+        jsr check_sized_dcb
+        jsr fill_512_reply
+        inc step
+        lda #1
+        sta $0303
+        rts
+capacity_w_oversized:
+        lda #0
+        sta expected_length_lo
+        lda #2
+        sta expected_length_hi
+        ldx #'W'
+        lda #$80
+        jsr check_sized_dcb
+        inc step
+        lda #1
+        sta $0303
+        rts
+capacity_poll_oversized:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda #2
+        sta poll_length_high
+        lda #2
+        ldx #1
+        jsr put_poll
+        inc step
+        rts
+capacity_recover_oversized:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda #2
+        sta poll_length_high
+        lda #2
+        ldx #1
+        jsr put_poll
+        inc step
+        rts
+
+; Fill exactly two 256-byte pages through the DCB buffer without changing the
+; transport's zero-page request/response pointers.
+fill_512_reply:
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda $0304
+        sta ptr1
+        lda $0305
+        sta ptr1+1
+        ldy #0
+        lda #$5a
+@page_one:
+        sta (ptr1),y
+        iny
+        bne @page_one
+        inc ptr1+1
+        ldy #0
+@page_two:
+        sta (ptr1),y
+        iny
+        bne @page_two
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
         rts
 
 FN_ATARI_TEST_SIOV = fake_siov
