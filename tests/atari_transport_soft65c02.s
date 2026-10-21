@@ -20,7 +20,8 @@ expected_length_lo: .res 1
 expected_length_hi: .res 1
 saved_ptr1: .res 2
 poll_length_high: .res 1
-_test_result: .res 48
+q_reply: .res 4
+_test_result: .res 74
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -204,6 +205,70 @@ _test_func:
         sta _test_result+46
         lda pattern_failure
         sta _test_result+47
+        ; Q is explicitly optional: init must retain the baseline without an
+        ; SIOV call, then each malformed capability reply restores it.
+        lda #4
+        sta mode
+        lda #0
+        sta step
+        sta failure
+        sta pattern_failure
+        lda #$d7
+        sta poll_count
+        lda #$c1
+        sta reply_state
+        lda #$c2
+        sta reply_state+1
+        lda #$c3
+        sta reply_state+2
+        jsr _fn_transport_init
+        jsr _fn_atari_max_payload
+        sta _test_result+48
+        stx _test_result+49
+        lda step
+        sta _test_result+50
+        jsr _fn_atari_query_capabilities
+        sta _test_result+51
+        jsr _fn_atari_max_payload
+        sta _test_result+52
+        stx _test_result+53
+        lda capability_reply
+        sta _test_result+54
+        lda capability_reply+1
+        sta _test_result+55
+        lda capability_reply+2
+        sta _test_result+56
+        lda capability_reply+3
+        sta _test_result+57
+        jsr _fn_atari_query_capabilities
+        sta _test_result+58
+        jsr _fn_atari_max_payload
+        sta _test_result+59
+        stx _test_result+60
+        jsr _fn_atari_query_capabilities
+        sta _test_result+61
+        jsr _fn_atari_max_payload
+        sta _test_result+62
+        stx _test_result+63
+        jsr _fn_atari_query_capabilities
+        sta _test_result+64
+        jsr _fn_atari_max_payload
+        sta _test_result+65
+        stx _test_result+66
+        lda step
+        sta _test_result+67
+        lda failure
+        sta _test_result+68
+        lda outstanding
+        sta _test_result+69
+        lda poll_count
+        sta _test_result+70
+        lda reply_state
+        sta _test_result+71
+        lda reply_state+1
+        sta _test_result+72
+        lda reply_state+2
+        sta _test_result+73
         rts
 
 ; X=expected command, A=expected DSTATS.  Bad DCB is a sticky test failure.
@@ -240,6 +305,8 @@ check_dcb_common:
         cmp expected_length_hi
         bne bad
         cpx #'P'
+        beq fixed_poll
+        cpx #'Q'
         beq fixed_poll
         lda $030a
         cmp expected_length_lo
@@ -313,13 +380,17 @@ fake_siov:
         beq @rejected
         cmp #2
         beq @interrupted
-        jmp capacity_fake
+        cmp #3
+        beq @capacity
+        jmp q_fake
 @timeout:
         jmp timeout_fake
 @rejected:
         jmp rejected_fake
 @interrupted:
         jmp interrupted_fake
+@capacity:
+        jmp capacity_fake
 timeout_fake:
         ldx step
         cpx #0
@@ -748,6 +819,116 @@ capacity_recover_oversized:
         ldx #1
         jsr put_poll
         inc step
+        rts
+
+; Mode 4: explicit native Q discovery.  Any command other than the four
+; fixture-defined Q calls reaches bad and leaves the sticky failure set.
+q_fake:
+        ldx step
+        cpx #0
+        bne :+
+        jmp q_valid
+:
+        cpx #1
+        bne :+
+        jmp q_bad_revision
+:
+        cpx #2
+        bne :+
+        jmp q_small_capacity
+:
+        cpx #3
+        bne :+
+        jmp q_siov_failure
+:
+        jmp bad
+q_valid:
+        ldx #'Q'
+        lda #$40
+        jsr check_dcb
+        lda #1
+        sta q_reply
+        lda #0
+        sta q_reply+1
+        lda #4
+        sta q_reply+2
+        lda #$a5
+        sta q_reply+3
+        jsr put_q_reply
+        inc step
+        lda #1
+        sta $0303
+        rts
+q_bad_revision:
+        ldx #'Q'
+        lda #$40
+        jsr check_dcb
+        lda #2
+        sta q_reply
+        lda #0
+        sta q_reply+1
+        lda #2
+        sta q_reply+2
+        lda #$b2
+        sta q_reply+3
+        jsr put_q_reply
+        inc step
+        lda #1
+        sta $0303
+        rts
+q_small_capacity:
+        ldx #'Q'
+        lda #$40
+        jsr check_dcb
+        lda #1
+        sta q_reply
+        lda #$ff
+        sta q_reply+1
+        lda #1
+        sta q_reply+2
+        lda #$c3
+        sta q_reply+3
+        jsr put_q_reply
+        inc step
+        lda #1
+        sta $0303
+        rts
+q_siov_failure:
+        ldx #'Q'
+        lda #$40
+        jsr check_dcb
+        inc step
+        lda #0
+        sta $0303
+        rts
+
+; Write the four-byte Q fixture through the DCB buffer and preserve the
+; production transport's zero-page scratch pointer.
+put_q_reply:
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda $0304
+        sta ptr1
+        lda $0305
+        sta ptr1+1
+        ldy #0
+        lda q_reply
+        sta (ptr1),y
+        iny
+        lda q_reply+1
+        sta (ptr1),y
+        iny
+        lda q_reply+2
+        sta (ptr1),y
+        iny
+        lda q_reply+3
+        sta (ptr1),y
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
         rts
 
 ; Fill exactly two 256-byte pages with i ^ (i >> 8) ^ $a5 through the DCB
