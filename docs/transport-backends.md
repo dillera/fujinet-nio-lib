@@ -54,26 +54,20 @@ driver ABI.
 
 ## Atari SIO Backend Notes
 
-The Atari target is a direct SIO transport, not the old firmware application
-command protocol. Application code still builds normal FujiBus request packets;
-the Atari transport SLIP-frames those packets and sends them over an SIO device
-ID reserved for the NIO FujiBus channel.
+The Atari target is a direct packet-native SIO transport, not the old firmware
+application protocol and not a stream channel. Application code builds normal
+FujiBus request packets; the backend exchanges each unmodified packet at SIO
+device `0x7F` through native `W`, `P`, and `R` commands. There is no SLIP,
+padding, or segmentation.
 
-The Atari transport is assembly, but it calls common C helpers for SLIP
-encoding and decoding. cc65's fastcall ABI passes the rightmost argument in A:X
-and places earlier arguments on the software stack in source order. For example:
-
-```c
-fn_slip_encode(request, req_len, output);
-```
-
-must be called from assembly by pushing `request`, then `req_len`, and finally
-placing `output` in A:X before `jsr _fn_slip_encode`. The decode path follows
-the same rule: push `input`, push `in_len`, pass `output` in A:X.
-
-This matters because the original spike had the rightmost argument on the stack.
-That made the SLIP routines read and write the wrong buffers, so the Atari side
-could issue SIO commands but the FujiBus payload was not being sent correctly.
+v1 has one outstanding request and a 512-byte baseline. `W` is accepted only
+while idle, `P` receives its fixed three-byte state/length record, and `R`
+uses the exact ready length. The optional `fn_atari_query_capabilities()`
+issues fixed-size `Q`; ordinary calls do not probe. Timeout retains the
+outstanding request, and later traffic polls and consumes it before sending a
+new request; the backend never replays an application request automatically.
+PROC notification is opt-in: `fn_atari_proc_notify()` only latches a flag for
+an application-owned handler, and foreground code still polls `P`.
 
 When running through Altirra/AltirraSDL's NetSIO custom device, the bridge-facing
 side also has to follow the Atari SIO completion sequence precisely:
