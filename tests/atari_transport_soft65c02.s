@@ -6,8 +6,11 @@ __fn_transport_ctx: .res 10
 request: .res 4
 response: .res 8
 step: .res 1
+mode: .res 1
 failure: .res 1
-_test_result: .res 16
+expected_dstats: .res 1
+saved_ptr1: .res 2
+_test_result: .res 18
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -32,6 +35,7 @@ _test_func:
         sta __fn_transport_ctx+6
         lda #0
         sta step
+        sta mode
         sta failure
         jsr _fn_transport_init
         jsr _fn_atari_max_payload
@@ -51,18 +55,45 @@ _test_func:
         sta _test_result+4
         lda __fn_transport_ctx+9
         sta _test_result+5
+        ; Rejected W must not create an outstanding transaction: the next
+        ; exchange's first SIOV call is W, not recovery P/R.
+        lda #1
+        sta mode
+        lda #0
+        sta step
+        sta failure
+        jsr _fn_transport_exchange
+        sta _test_result+8
+        jsr _fn_transport_exchange
+        sta _test_result+9
+        lda step
+        sta _test_result+10
+        lda failure
+        sta _test_result+11
+        lda response
+        sta _test_result+12
+        lda response+1
+        sta _test_result+13
+        lda response+2
+        sta _test_result+14
+        lda response+3
+        sta _test_result+15
+        lda __fn_transport_ctx+8
+        sta _test_result+16
+        lda __fn_transport_ctx+9
+        sta _test_result+17
         rts
 
 ; X=expected command, A=expected DSTATS.  Bad DCB is a sticky test failure.
 check_dcb:
-        sta ptr2
+        sta expected_dstats
         lda $0300
         cmp #$7f
         bne bad
         txa
         cmp $0302
         bne bad
-        lda ptr2
+        lda expected_dstats
         cmp $0303
         bne bad
         cpx #'P'
@@ -98,6 +129,10 @@ bad:    lda step
 ; A=state and X/Y=reply length for a P reply.
 put_poll:
         pha
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
         lda $0304
         sta ptr1
         lda $0305
@@ -113,24 +148,44 @@ put_poll:
         ; caller places high length in _test_result+15
         lda _test_result+15
         sta (ptr1),y
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
         lda #1
         sta $0303
         rts
 
 fake_siov:
+        lda mode
+        beq :+
+        jmp rejected_fake
+:
         ldx step
         cpx #0
-        beq first_w
+        bne :+
+        jmp first_w
+:
         cpx #61
-        bcc pending_p
+        bcs :+
+        jmp pending_p
+:
         cpx #61
-        beq recovery_p
+        bne :+
+        jmp recovery_p
+:
         cpx #62
-        beq recovery_r
+        bne :+
+        jmp recovery_r
+:
         cpx #63
-        beq next_w
+        bne :+
+        jmp next_w
+:
         cpx #64
-        beq next_p
+        bne :+
+        jmp next_p
+:
         cpx #65
         bne :+
         jmp next_r
@@ -140,6 +195,81 @@ first_w:
         ldx #'W'
         lda #$80
         jsr check_dcb
+        inc step
+        lda #1
+        sta $0303
+        rts
+
+; Mode 1: rejected W, then direct W/P/R success.  Any recovery P/R before
+; step 1 reaches bad, proving the rejected W left no outstanding request.
+rejected_fake:
+        ldx step
+        cpx #0
+        beq rejected_w
+        cpx #1
+        beq accepted_w
+        cpx #2
+        beq accepted_p
+        cpx #3
+        bne :+
+        jmp accepted_r
+:
+        jmp bad
+rejected_w:
+        ldx #'W'
+        lda #$80
+        jsr check_dcb
+        inc step
+        lda #0
+        sta $0303
+        rts
+accepted_w:
+        ldx #'W'
+        lda #$80
+        jsr check_dcb
+        inc step
+        lda #1
+        sta $0303
+        rts
+accepted_p:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda #0
+        sta _test_result+15
+        lda #2
+        ldx #4
+        jsr put_poll
+        inc step
+        rts
+accepted_r:
+        ldx #'R'
+        lda #$40
+        jsr check_dcb
+        ldy #0
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda $0304
+        sta ptr1
+        lda $0305
+        sta ptr1+1
+        lda #$fc
+        sta (ptr1),y
+        iny
+        lda #$01
+        sta (ptr1),y
+        iny
+        lda #$04
+        sta (ptr1),y
+        iny
+        lda #$ff
+        sta (ptr1),y
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
         inc step
         lda #1
         sta $0303
@@ -209,6 +339,10 @@ next_r:
         jsr check_dcb
         inc step
         ldy #0
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
         lda $0304
         sta ptr1
         lda $0305
@@ -224,6 +358,10 @@ next_r:
         iny
         lda #$ff
         sta (ptr1),y
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
         lda #1
         sta $0303
         rts
