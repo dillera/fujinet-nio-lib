@@ -22,7 +22,7 @@ saved_ptr1: .res 2
 poll_length_high: .res 1
 q_reply: .res 4
 malformed_kind: .res 1
-_test_result: .res 107
+_test_result: .res 118
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -333,6 +333,41 @@ _test_func:
         lda failure
         sta _test_result+100
         jsr save_malformed_response_2
+        ; A device reset reports canonical idle.  It retires the stale local
+        ; outstanding state without an R, then permits the next application
+        ; request (whose payload differs from the timed-out request) to run.
+        jsr set_small_context
+        lda #6
+        sta mode
+        lda #0
+        sta step
+        sta failure
+        sta pattern_failure
+        jsr _fn_transport_init
+        jsr _fn_transport_exchange
+        sta _test_result+107
+        lda outstanding
+        sta _test_result+108
+        lda #$fe
+        sta request+3
+        jsr _fn_transport_exchange
+        sta _test_result+109
+        lda step
+        sta _test_result+110
+        lda failure
+        sta _test_result+111
+        lda response
+        sta _test_result+112
+        lda response+1
+        sta _test_result+113
+        lda response+2
+        sta _test_result+114
+        lda response+3
+        sta _test_result+115
+        lda __fn_transport_ctx+8
+        sta _test_result+116
+        lda __fn_transport_ctx+9
+        sta _test_result+117
         rts
 
 ; X=expected command, A=expected DSTATS.  Bad DCB is a sticky test failure.
@@ -502,6 +537,10 @@ fake_siov:
         cmp #5
         bne :+
         jmp malformed_p_fake
+:
+        cmp #6
+        bne :+
+        jmp reset_idle_fake
 :
         jmp bad
 @timeout:
@@ -1004,6 +1043,110 @@ malformed_zero_ready_p:
         ldx #0
         jsr put_poll
         inc step
+        rts
+
+; Mode 6: a reset's P=idle releases the stale accepted W.  The idle response
+; must be followed immediately by the new application's W, never an R for the
+; reset-discarded response or a replay of the original request.
+reset_idle_fake:
+        ldx step
+        cpx #0
+        bne :+
+        jmp reset_first_w
+:
+        cpx #61
+        bcs :+
+        jmp pending_p
+:
+        cpx #61
+        bne :+
+        jmp reset_idle_p
+:
+        cpx #62
+        bne :+
+        jmp reset_new_w
+:
+        cpx #63
+        bne :+
+        jmp accepted_p
+:
+        cpx #64
+        bne :+
+        jmp accepted_r
+:
+        jmp bad
+reset_first_w:
+        ldx #'W'
+        lda #$80
+        jsr check_dcb
+        lda #$ff
+        jsr check_w_payload
+        inc step
+        lda #1
+        sta $0303
+        rts
+reset_idle_p:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda #0
+        sta poll_length_high
+        lda #0
+        ldx #0
+        jsr put_poll
+        inc step
+        rts
+reset_new_w:
+        ldx #'W'
+        lda #$80
+        jsr check_dcb
+        lda #$fe
+        jsr check_w_payload
+        inc step
+        lda #1
+        sta $0303
+        rts
+
+; A=the expected fourth byte of the four-byte application W fixture.  This
+; distinguishes the next application request from an accidental replay.
+check_w_payload:
+        pha
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda $0304
+        sta ptr1
+        lda $0305
+        sta ptr1+1
+        ldy #0
+        lda (ptr1),y
+        cmp #$fc
+        beq :+
+        jsr bad
+:
+        iny
+        lda (ptr1),y
+        cmp #$01
+        beq :+
+        jsr bad
+:
+        iny
+        lda (ptr1),y
+        cmp #$04
+        beq :+
+        jsr bad
+:
+        iny
+        pla
+        cmp (ptr1),y
+        beq :+
+        jsr bad
+:
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
         rts
 
 ; Mode 4: explicit native Q discovery.  Any command other than the four

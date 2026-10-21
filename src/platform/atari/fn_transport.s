@@ -259,6 +259,15 @@ _fn_transport_exchange:
         cmp #FN_OK
         bne @return
 @send:
+        ; Recovery P uses the fixed three-byte poll size.  Reload the caller's
+        ; request size before W, including reset-to-idle recovery where no R
+        ; has restored a ready-response length.
+        ldy #4
+        lda __fn_transport_ctx,y
+        sta reply_length
+        iny
+        lda __fn_transport_ctx,y
+        sta reply_length+1
         lda #$80
         sta dstats
         ldx ptr1
