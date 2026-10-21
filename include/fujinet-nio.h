@@ -111,6 +111,14 @@ extern "C" {
 /** Unknown/unexpected error */
 #define FN_ERR_UNKNOWN      0xFF
 
+#ifdef __ATARI__
+/* Optional native-SIO capability query.  Never performed implicitly. */
+uint8_t fn_atari_query_capabilities(void);
+uint16_t fn_atari_max_payload(void);
+/* ISR-safe readiness latch for an application-owned/chained VPRCED handler. */
+void fn_atari_proc_notify(void);
+#endif
+
 #define FN_WIFI_MAX_SSID      32
 #define FN_WIFI_MAX_BSSID     17
 #define FN_WIFI_MAX_PASSWORD  64
