@@ -23,7 +23,7 @@ override PROGRAM := fujinet-nio
 .PHONY: all clean help disk-bbc disk-bbc-clib test-legacy test-mount-resolve \
 	test-appstore-read test-slot-catalog test-bbc test-bbc-scripted \
 	test-bbc-real test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-library-link \
-	test-amiga-transport test \
+	test-amiga-transport test-atari-transport test \
 	test-all-build check msdos $(TARGETS) $(EXTRA_TARGETS)
 
 # Default target: build all
@@ -149,11 +149,15 @@ test-amiga-transport:
 	@echo "Running Amiga broker-transport host tests..."
 	bash ./tests/run_amiga_transport_host_test.sh
 
+test-atari-transport:
+	@echo "Running Atari assembled SIOV/DCB transport test..."
+	bash ./tests/run_atari_transport_sim_test.sh
+
 test-all-build:
 	@echo "Building all configured library targets..."
 	$(MAKE) all
 
-test: test-library-link test-legacy test-mount-resolve test-appstore-read test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-amiga-transport
+test: test-library-link test-legacy test-mount-resolve test-appstore-read test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-amiga-transport test-atari-transport
 
 # Fast required change check: compile every configured target, then run the
 # host-side tests and public archive-link test. Keep this as a recipe rather

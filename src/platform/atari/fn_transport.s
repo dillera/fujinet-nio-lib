@@ -4,7 +4,9 @@
         .export _fn_transport_exchange, _fn_platform_name
         .export _fn_atari_last_sio_status, _fn_atari_proc_notify
         .export _fn_atari_query_capabilities, _fn_atari_max_payload
+ .ifndef FN_ATARI_TEST_SIOV
         .import __fn_transport_ctx
+ .endif
         .importzp ptr1, ptr2
         .include "atari.inc"
 
