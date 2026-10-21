@@ -27,6 +27,7 @@ outstanding: .res 1
 proc_ready: .res 1
 capability_valid: .res 1
 capability_max: .res 2
+capability_reply: .res 4
 poll_count: .res 1
 reply_state: .res 3
 reply_length: .res 2
@@ -37,6 +38,10 @@ _fn_transport_init:
         lda #0
         sta outstanding
         sta proc_ready
+        lda #<NIO_CAPACITY
+        sta capability_max
+        lda #>NIO_CAPACITY
+        sta capability_max+1
         rts
 _fn_transport_close: rts
 _fn_transport_ready:
@@ -55,27 +60,31 @@ _fn_atari_query_capabilities:
         sta reply_length+1
         lda #$40
         sta dstats
-        ldx #<reply_state
-        ldy #>reply_state
+        ldx #<capability_reply
+        ldy #>capability_reply
         lda #'Q'
         jsr sio_call
         bne @bad
-        lda reply_state
+        lda capability_reply
         cmp #1
         bne @bad
-        lda reply_state+2
+        lda capability_reply+2
         cmp #2
         bcc @bad
         bne @good
-        lda reply_state+1
+        lda capability_reply+1
         beq @good
 @bad:   lda #0
         sta capability_valid
+        lda #<NIO_CAPACITY
+        sta capability_max
+        lda #>NIO_CAPACITY
+        sta capability_max+1
         lda #FN_ERR_TRANSPORT
         rts
-@good:  lda reply_state+1
+@good:  lda capability_reply+1
         sta capability_max
-        lda reply_state+2
+        lda capability_reply+2
         sta capability_max+1
         cmp #>NIO_CAPACITY
         bcc @cap_set
