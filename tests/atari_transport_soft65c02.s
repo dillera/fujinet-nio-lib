@@ -10,7 +10,8 @@ mode: .res 1
 failure: .res 1
 expected_dstats: .res 1
 saved_ptr1: .res 2
-_test_result: .res 18
+poll_length_high: .res 1
+_test_result: .res 28
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -37,6 +38,7 @@ _test_func:
         sta step
         sta mode
         sta failure
+        sta poll_length_high
         jsr _fn_transport_init
         jsr _fn_atari_max_payload
         sta _test_result+6
@@ -82,6 +84,39 @@ _test_func:
         sta _test_result+16
         lda __fn_transport_ctx+9
         sta _test_result+17
+        ; A failed terminal R leaves the prior response outstanding.  The next
+        ; exchange must retire it with P/R before issuing its new W.
+        lda #2
+        sta mode
+        lda #0
+        sta step
+        sta failure
+        sta poll_length_high
+        lda #$aa
+        sta response
+        sta response+1
+        sta response+2
+        sta response+3
+        jsr _fn_transport_exchange
+        sta _test_result+18
+        jsr _fn_transport_exchange
+        sta _test_result+19
+        lda step
+        sta _test_result+20
+        lda failure
+        sta _test_result+21
+        lda response
+        sta _test_result+22
+        lda response+1
+        sta _test_result+23
+        lda response+2
+        sta _test_result+24
+        lda response+3
+        sta _test_result+25
+        lda __fn_transport_ctx+8
+        sta _test_result+26
+        lda __fn_transport_ctx+9
+        sta _test_result+27
         rts
 
 ; X=expected command, A=expected DSTATS.  Bad DCB is a sticky test failure.
@@ -145,8 +180,8 @@ put_poll:
         sta (ptr1),y
         iny
         tya
-        ; caller places high length in _test_result+15
-        lda _test_result+15
+        ; Caller supplies the response-length high byte.
+        lda poll_length_high
         sta (ptr1),y
         lda saved_ptr1
         sta ptr1
@@ -158,9 +193,15 @@ put_poll:
 
 fake_siov:
         lda mode
-        beq :+
+        beq @timeout
+        cmp #1
+        beq @rejected
+        jmp interrupted_fake
+@timeout:
+        jmp timeout_fake
+@rejected:
         jmp rejected_fake
-:
+timeout_fake:
         ldx step
         cpx #0
         bne :+
@@ -236,7 +277,7 @@ accepted_p:
         lda #$40
         jsr check_dcb
         lda #0
-        sta _test_result+15
+        sta poll_length_high
         lda #2
         ldx #4
         jsr put_poll
@@ -279,7 +320,7 @@ pending_p:
         lda #$40
         jsr check_dcb
         lda #0
-        sta _test_result+15
+        sta poll_length_high
         lda #1
         ldx #0
         jsr put_poll
@@ -290,7 +331,7 @@ recovery_p:
         lda #$40
         jsr check_dcb
         lda #0
-        sta _test_result+15
+        sta poll_length_high
         lda #2
         ldx #4
         jsr put_poll
@@ -327,7 +368,7 @@ next_p:
         lda #$40
         jsr check_dcb
         lda #0
-        sta _test_result+15
+        sta poll_length_high
         lda #2
         ldx #4
         jsr put_poll
@@ -362,6 +403,106 @@ next_r:
         sta ptr1
         lda saved_ptr1+1
         sta ptr1+1
+        lda #1
+        sta $0303
+        rts
+
+; Mode 2: W/P ready followed by a failed R.  The next exchange is accepted
+; only as recovery P/R, then a new W/P/R transaction.
+interrupted_fake:
+        ldx step
+        cpx #0
+        bne :+
+        jmp first_w
+:
+        cpx #1
+        bne :+
+        jmp interrupted_ready_p
+:
+        cpx #2
+        bne :+
+        jmp interrupted_r
+:
+        cpx #3
+        bne :+
+        jmp interrupted_recovery_p
+:
+        cpx #4
+        bne :+
+        jmp interrupted_recovery_r
+:
+        cpx #5
+        bne :+
+        jmp accepted_w
+:
+        cpx #6
+        bne :+
+        jmp accepted_p
+:
+        cpx #7
+        bne :+
+        jmp accepted_r
+:
+        jmp bad
+interrupted_ready_p:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda #0
+        sta poll_length_high
+        lda #2
+        ldx #4
+        jsr put_poll
+        inc step
+        rts
+interrupted_r:
+        ldx #'R'
+        lda #$40
+        jsr check_dcb
+        inc step
+        lda #0
+        sta $0303
+        rts
+interrupted_recovery_p:
+        ldx #'P'
+        lda #$40
+        jsr check_dcb
+        lda #0
+        sta poll_length_high
+        lda #2
+        ldx #4
+        jsr put_poll
+        inc step
+        rts
+interrupted_recovery_r:
+        ldx #'R'
+        lda #$40
+        jsr check_dcb
+        ldy #0
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda $0304
+        sta ptr1
+        lda $0305
+        sta ptr1+1
+        lda #$fc
+        sta (ptr1),y
+        iny
+        lda #$01
+        sta (ptr1),y
+        iny
+        lda #$04
+        sta (ptr1),y
+        iny
+        lda #$ff
+        sta (ptr1),y
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
+        inc step
         lda #1
         sta $0303
         rts
