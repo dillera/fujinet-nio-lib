@@ -1,7 +1,7 @@
 memory load atari "${BINARY_PATH}"
 symbols load "${SYMBOLS_PATH}"
 registers flush
-run $init_harness until (CP = $end_init_harness OR cycle_count > 50000)
+run $init_harness until (CP = $end_init_harness OR cycle_count > 120000)
 assert CP = $end_init_harness $$transport completed$$
 assert $_test_result = 0x06 $$accepted W times out after pending polls$$
 assert $_test_result + 1 = 0x00 $$next exchange recovers then succeeds$$
@@ -43,10 +43,11 @@ assert $_test_result + 36 = 0x10 $$513-byte reply is rejected before R$$
 assert $_test_result + 37 = 0x10 $$oversized outstanding reply remains unrecoverable$$
 assert $_test_result + 38 = 0x09 $$oversized reply permits only W/P then recovery P$$
 assert $_test_result + 39 = 0x00 $$capacity DCB sequence matched exactly$$
-assert $_test_result + 40 = 0x5A $$512-byte response first byte is exact$$
-assert $_test_result + 41 = 0x5A $$512-byte response middle byte is exact$$
-assert $_test_result + 42 = 0x5A $$512-byte response final byte is exact$$
+assert $_test_result + 40 = 0xA5 $$512-byte response first byte follows fixture pattern$$
+assert $_test_result + 41 = 0x5A $$512-byte response middle byte follows fixture pattern$$
+assert $_test_result + 42 = 0x5B $$512-byte response final byte follows fixture pattern$$
 assert $_test_result + 43 = 0xA1 $$request lower canary is unchanged$$
 assert $_test_result + 44 = 0xA2 $$request upper canary is unchanged$$
 assert $_test_result + 45 = 0xB1 $$response lower canary is unchanged$$
 assert $_test_result + 46 = 0xB2 $$response upper canary is unchanged$$
+assert $_test_result + 47 = 0x00 $$all 512 response bytes match the independent pattern$$

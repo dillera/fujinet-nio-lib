@@ -14,12 +14,13 @@ response_guard_hi: .res 1
 step: .res 1
 mode: .res 1
 failure: .res 1
+pattern_failure: .res 1
 expected_dstats: .res 1
 expected_length_lo: .res 1
 expected_length_hi: .res 1
 saved_ptr1: .res 2
 poll_length_high: .res 1
-_test_result: .res 47
+_test_result: .res 48
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -46,6 +47,7 @@ _test_func:
         sta step
         sta mode
         sta failure
+        sta pattern_failure
         sta poll_length_high
         jsr _fn_transport_init
         jsr _fn_atari_max_payload
@@ -72,6 +74,7 @@ _test_func:
         lda #0
         sta step
         sta failure
+        sta pattern_failure
         jsr _fn_transport_exchange
         sta _test_result+8
         jsr _fn_transport_exchange
@@ -99,6 +102,7 @@ _test_func:
         lda #0
         sta step
         sta failure
+        sta pattern_failure
         sta poll_length_high
         lda #$aa
         sta response
@@ -133,6 +137,7 @@ _test_func:
         lda #0
         sta step
         sta failure
+        sta pattern_failure
         sta poll_length_high
         lda #$a1
         sta request_guard_lo
@@ -180,6 +185,7 @@ _test_func:
         sta _test_result+37
         lda step
         sta _test_result+38
+        jsr verify_512_reply
         lda failure
         sta _test_result+39
         lda response_large
@@ -196,6 +202,8 @@ _test_func:
         sta _test_result+45
         lda response_guard_hi
         sta _test_result+46
+        lda pattern_failure
+        sta _test_result+47
         rts
 
 ; X=expected command, A=expected DSTATS.  Bad DCB is a sticky test failure.
@@ -246,10 +254,11 @@ fixed_poll:
         lda $030b
         bne bad
         rts
-bad:    lda step
-        clc
-        adc #1
+bad:    lda failure
+        bne @done
+        lda #1
         sta failure
+@done:
         rts
 
 set_large_context:
@@ -741,8 +750,8 @@ capacity_recover_oversized:
         inc step
         rts
 
-; Fill exactly two 256-byte pages through the DCB buffer without changing the
-; transport's zero-page request/response pointers.
+; Fill exactly two 256-byte pages with i ^ (i >> 8) ^ $a5 through the DCB
+; buffer without changing the transport's zero-page request/response pointers.
 fill_512_reply:
         lda ptr1
         sta saved_ptr1
@@ -753,14 +762,17 @@ fill_512_reply:
         lda $0305
         sta ptr1+1
         ldy #0
-        lda #$5a
 @page_one:
+        tya
+        eor #$a5
         sta (ptr1),y
         iny
         bne @page_one
         inc ptr1+1
         ldy #0
 @page_two:
+        tya
+        eor #$a4
         sta (ptr1),y
         iny
         bne @page_two
@@ -768,6 +780,51 @@ fill_512_reply:
         sta ptr1
         lda saved_ptr1+1
         sta ptr1+1
+        rts
+
+; Independently calculate the expected byte at every offset after the
+; production R has completed.  Continue after mismatches so every byte is
+; evaluated; pattern_failure is separate from the sticky DCB failure latch.
+verify_512_reply:
+        lda ptr1
+        sta saved_ptr1
+        lda ptr1+1
+        sta saved_ptr1+1
+        lda #<response_large
+        sta ptr1
+        lda #>response_large
+        sta ptr1+1
+        ldx #0
+@page:
+        ldy #0
+@byte:
+        tya
+        eor #$a5
+        cpx #0
+        beq :+
+        eor #1
+:
+        cmp (ptr1),y
+        beq :+
+        jsr pattern_bad
+:
+        iny
+        bne @byte
+        inc ptr1+1
+        inx
+        cpx #2
+        bne @page
+        lda saved_ptr1
+        sta ptr1
+        lda saved_ptr1+1
+        sta ptr1+1
+        rts
+pattern_bad:
+        lda pattern_failure
+        bne :+
+        lda #1
+        sta pattern_failure
+:
         rts
 
 FN_ATARI_TEST_SIOV = fake_siov
