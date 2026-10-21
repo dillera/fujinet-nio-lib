@@ -128,6 +128,16 @@ sio_call:
         lda reply_length+1
         sta dbythi
         sta daux2
+        lda dcomnd
+        cmp #'P'
+        beq @fixed_aux
+        cmp #'Q'
+        bne @aux_done
+@fixed_aux:
+        lda #0
+        sta daux1
+        sta daux2
+@aux_done:
         lda #SIO_TIMEOUT
         sta dtimlo
         lda #0
