@@ -33,6 +33,10 @@ _test_func:
         lda #0
         sta step
         sta failure
+        jsr _fn_transport_init
+        jsr _fn_atari_max_payload
+        sta _test_result+6
+        stx _test_result+7
         ; Initial W, then 60 pending P polls: must return timeout.
         jsr _fn_transport_exchange
         sta _test_result
@@ -86,6 +90,8 @@ fixed_poll:
         bne bad
         rts
 bad:    lda step
+        clc
+        adc #1
         sta failure
         rts
 
