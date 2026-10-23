@@ -15,7 +15,6 @@ uint8_t fn_raw_call(uint8_t device,
     uint16_t req_len;
     uint16_t copy_len;
     uint8_t result;
-    uint8_t retried;
     uint8_t attempt_ok;
 
     if (response != 0) {
@@ -52,42 +51,38 @@ uint8_t fn_raw_call(uint8_t device,
     _fn_transport_ctx.response = _fn_resp_buf;
     _fn_transport_ctx.resp_max = FN_MAX_PACKET_SIZE;
 
-    retried = 0;
     copy_len = 0;
 
-    for (;;) {
-        attempt_ok = 0;
+    attempt_ok = 0;
 
-        _fn_transport_ctx.resp_len = 0;
-        result = fn_transport_exchange();
-        if (result == FN_OK &&
-            _fn_transport_ctx.resp_len >= FN_HEADER_SIZE &&
-            _fn_resp_buf[0] == device &&
-            _fn_resp_buf[1] == command) {
-            _fn_parse_ctx.response = _fn_resp_buf;
-            _fn_parse_ctx.resp_len = _fn_transport_ctx.resp_len;
-            result = fn_parse_response_header();
-            if (result == FN_OK) {
-                copy_len = _fn_parse_ctx.data_len;
-                if (copy_len > reply_capacity)
-                    result = FN_ERR_IO;
-                else
-                    attempt_ok = 1;
-            }
-        } else if (result == FN_OK) {
-            result = FN_ERR_IO;
+    _fn_transport_ctx.resp_len = 0;
+    result = fn_transport_exchange();
+    if (result == FN_OK &&
+        _fn_transport_ctx.resp_len >= FN_HEADER_SIZE &&
+        _fn_resp_buf[0] == device &&
+        _fn_resp_buf[1] == command) {
+        _fn_parse_ctx.response = _fn_resp_buf;
+        _fn_parse_ctx.resp_len = _fn_transport_ctx.resp_len;
+        result = fn_parse_response_header();
+        if (result == FN_OK) {
+            copy_len = _fn_parse_ctx.data_len;
+            if (copy_len > reply_capacity)
+                result = FN_ERR_IO;
+            else
+                attempt_ok = 1;
         }
+    } else if (result == FN_OK) {
+        result = FN_ERR_IO;
+    }
 
-        if (attempt_ok)
-            break;
-        /* One replay after a short/corrupt FujiBus body only.  A transport
-         * error can mean native Atari W was accepted and terminal R failed;
-         * replaying a public side-effecting request would then duplicate it.
-         * The transport retains and drains that response before a distinct
+    if (!attempt_ok) {
+        /* Any failed response is ambiguous: W may have reached a
+         * side-effecting device even when the body is short, malformed,
+         * checksum-corrupt, mismatched, or too large for this caller.  Do
+         * not replay the complete application request.  A packet-native
+         * transport retains/drains an outstanding response before a distinct
          * later application call. */
-        if (retried || result != FN_ERR_IO)
-            return result;
-        retried = 1;
+        return result;
     }
     if (copy_len > 0 && reply != 0) {
         memcpy(reply, _fn_resp_buf + _fn_parse_ctx.data_offset, copy_len);
