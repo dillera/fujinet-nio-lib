@@ -80,9 +80,12 @@ uint8_t fn_raw_call(uint8_t device,
 
         if (attempt_ok)
             break;
-        /* One replay after a short/corrupt body. Do not retry TIMEOUT
-         * (multi-second QUERY). Disk I/O does not use fn_raw_call. */
-        if (retried || result == FN_ERR_TIMEOUT)
+        /* One replay after a short/corrupt FujiBus body only.  A transport
+         * error can mean native Atari W was accepted and terminal R failed;
+         * replaying a public side-effecting request would then duplicate it.
+         * The transport retains and drains that response before a distinct
+         * later application call. */
+        if (retried || result != FN_ERR_IO)
             return result;
         retried = 1;
     }
