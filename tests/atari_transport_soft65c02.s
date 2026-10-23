@@ -22,7 +22,7 @@ saved_ptr1: .res 2
 poll_length_high: .res 1
 q_reply: .res 4
 malformed_kind: .res 1
-_test_result: .res 121
+_test_result: .res 122
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -52,6 +52,7 @@ _test_func:
         sta pattern_failure
         sta poll_length_high
         jsr _fn_transport_init
+        sta _test_result+121
         ; PROC notification is a latch only: it must not enter SIOV or alter
         ; transaction state; foreground exchange still begins with W/P.
         jsr _fn_atari_proc_notify

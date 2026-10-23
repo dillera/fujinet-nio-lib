@@ -42,6 +42,7 @@ _fn_transport_init:
         sta capability_max
         lda #>NIO_CAPACITY
         sta capability_max+1
+        lda #FN_OK
         rts
 _fn_transport_close: rts
 _fn_transport_ready:

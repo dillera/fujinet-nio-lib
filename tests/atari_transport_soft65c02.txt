@@ -124,3 +124,4 @@ assert $_test_result + 117 = 0x00 $$reset recovery response high length is zero$
 assert $_test_result + 118 = 0x00 $$PROC notification performs no SIOV call$$
 assert $_test_result + 119 = 0x00 $$PROC notification creates no transaction$$
 assert $_test_result + 120 = 0x01 $$PROC notification is an ISR-safe flag latch$$
+assert $_test_result + 121 = 0x00 $$transport init returns FN_OK after establishing baseline$$
