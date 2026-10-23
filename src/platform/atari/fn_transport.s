@@ -4,6 +4,7 @@
         .export _fn_transport_exchange, _fn_platform_name
         .export _fn_atari_last_sio_status, _fn_atari_proc_notify
         .export _fn_atari_query_capabilities, _fn_atari_max_payload
+        .export _fn_atari_capability_flags
  .ifndef FN_ATARI_TEST_SIOV
         .import __fn_transport_ctx
  .endif
@@ -27,6 +28,7 @@ outstanding: .res 1
 proc_ready: .res 1
 capability_valid: .res 1
 capability_max: .res 2
+capability_flags: .res 1
 capability_reply: .res 4
 poll_count: .res 1
 reply_state: .res 3
@@ -38,6 +40,8 @@ _fn_transport_init:
         lda #0
         sta outstanding
         sta proc_ready
+        sta capability_valid
+        sta capability_flags
         lda #<NIO_CAPACITY
         sta capability_max
         lda #>NIO_CAPACITY
@@ -77,6 +81,7 @@ _fn_atari_query_capabilities:
         beq @good
 @bad:   lda #0
         sta capability_valid
+        sta capability_flags
         lda #<NIO_CAPACITY
         sta capability_max
         lda #>NIO_CAPACITY
@@ -87,6 +92,9 @@ _fn_atari_query_capabilities:
         sta capability_max
         lda capability_reply+2
         sta capability_max+1
+        lda capability_reply+3
+        sta capability_flags
+        lda capability_reply+2
         cmp #>NIO_CAPACITY
         bcc @cap_set
         bne @cap_limit
@@ -105,6 +113,9 @@ _fn_atari_query_capabilities:
 _fn_atari_max_payload:
         lda capability_max
         ldx capability_max+1
+        rts
+_fn_atari_capability_flags:
+        lda capability_flags
         rts
 _fn_atari_last_sio_status:
         lda last_sio_status

@@ -113,8 +113,13 @@ extern "C" {
 
 #ifdef __ATARI__
 /* Optional native-SIO capability query.  Never performed implicitly. */
+#define FN_ATARI_CAP_PROC 0x01u
+
 uint8_t fn_atari_query_capabilities(void);
 uint16_t fn_atari_max_payload(void);
+/* Feature bits returned by the most recent successful explicit Q; zero after
+ * init or a failed query. */
+uint8_t fn_atari_capability_flags(void);
 /* ISR-safe readiness latch for an application-owned/chained VPRCED handler. */
 void fn_atari_proc_notify(void);
 #endif

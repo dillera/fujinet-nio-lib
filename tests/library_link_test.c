@@ -105,6 +105,7 @@ int main(void)
 #ifdef __ATARI__
     (void)&fn_atari_query_capabilities;
     (void)&fn_atari_max_payload;
+    (void)&fn_atari_capability_flags;
     (void)&fn_atari_proc_notify;
 #endif
     return 0;

@@ -22,7 +22,7 @@ saved_ptr1: .res 2
 poll_length_high: .res 1
 q_reply: .res 4
 malformed_kind: .res 1
-_test_result: .res 122
+_test_result: .res 127
         .segment "CODE"
 _test_func:
         lda #$fc
@@ -234,6 +234,8 @@ _test_func:
         lda #$c3
         sta reply_state+2
         jsr _fn_transport_init
+        jsr _fn_atari_capability_flags
+        sta _test_result+122
         jsr _fn_atari_max_payload
         sta _test_result+48
         stx _test_result+49
@@ -252,21 +254,29 @@ _test_func:
         sta _test_result+56
         lda capability_reply+3
         sta _test_result+57
+        jsr _fn_atari_capability_flags
+        sta _test_result+123
         jsr _fn_atari_query_capabilities
         sta _test_result+58
         jsr _fn_atari_max_payload
         sta _test_result+59
         stx _test_result+60
+        jsr _fn_atari_capability_flags
+        sta _test_result+124
         jsr _fn_atari_query_capabilities
         sta _test_result+61
         jsr _fn_atari_max_payload
         sta _test_result+62
         stx _test_result+63
+        jsr _fn_atari_capability_flags
+        sta _test_result+125
         jsr _fn_atari_query_capabilities
         sta _test_result+64
         jsr _fn_atari_max_payload
         sta _test_result+65
         stx _test_result+66
+        jsr _fn_atari_capability_flags
+        sta _test_result+126
         lda step
         sta _test_result+67
         lda failure
