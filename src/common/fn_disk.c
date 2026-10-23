@@ -1,5 +1,6 @@
 #include <string.h>
 
+#include "fn_internal.h"
 #include "fn_protocol.h"
 #include "fn_raw.h"
 #include "fujinet-nio.h"
@@ -23,12 +24,15 @@ enum {
     FN_DISK_INFO_RESPONSE_SIZE_WITH_LAST_ERROR = 13
 };
 
-/* Legacy DiskDevice calls are synchronous. Keep their large codec buffers out
- * of cc65 stack frames; explicit-context clients own separate scratch storage
- * instead, while other legacy builds retain function-local buffers. */
+/* DiskDevice calls are synchronous.  On cc65, avoid two more 512-byte static
+ * arrays: use the opposite shared packet buffers so fn_raw_call() can build
+ * its request in _fn_req_buf, receive into _fn_resp_buf, then copy the parsed
+ * payload into _fn_req_buf.  The Disk application request originates in
+ * _fn_resp_buf, so neither copy overlaps.  This preserves the full 512-byte
+ * packet capacity while keeping public Disk APIs usable in Atari RAM. */
 #if defined(__CC65__)
-static uint8_t disk_request[FN_MAX_PACKET_SIZE];
-static uint8_t disk_reply[FN_MAX_PACKET_SIZE];
+#define disk_request _fn_resp_buf
+#define disk_reply _fn_req_buf
 #endif
 
 static uint8_t disk_status(uint8_t status)
