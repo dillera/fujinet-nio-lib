@@ -142,6 +142,16 @@ static void check_session_recorded(uint8_t needs_body)
     CHECK(_fn_sessions[0].read_offset == 0);
 }
 
+static void fill_session_table(void)
+{
+    uint8_t index;
+
+    for (index = 0; index < FN_MAX_SESSIONS; ++index) {
+        _fn_sessions[index].active = 1;
+        _fn_sessions[index].handle = (fn_handle_t)(0x4000u + index);
+    }
+}
+
 static void test_fn_open(void)
 {
     static uint8_t expected[FN_MAX_PACKET_SIZE];
@@ -283,6 +293,50 @@ static void test_translated(void)
     CHECK(_fn_sessions[0].active == 0);
 }
 
+static void test_session_exhaustion(void)
+{
+    fn_handle_t handle;
+
+    /* A full local table must reject before the request can create a remote
+       session. The output handle is safe to discard or retry after closing an
+       existing local session. */
+    reset();
+    fill_session_table();
+    handle = 0xbeefu;
+    CHECK(fn_open(&handle, FN_METHOD_GET, TEST_URL, 0) == FN_ERR_NO_HANDLES);
+    CHECK(handle == FN_INVALID_HANDLE);
+    CHECK(exchange_calls == 0);
+    CHECK(_fn_sessions[0].handle == 0x4000u);
+    CHECK(_fn_sessions[1].handle == 0x4001u);
+
+    /* The eviction flag remains a wire request when capacity exists, but it
+       cannot authorize silent eviction of a locally owned session. */
+    handle = 0xbeefu;
+    CHECK(fn_open(&handle, FN_METHOD_GET, TEST_URL, FN_OPEN_ALLOW_EVICT) ==
+          FN_ERR_NO_HANDLES);
+    CHECK(handle == FN_INVALID_HANDLE);
+    CHECK(exchange_calls == 0);
+
+    handle = 0xbeefu;
+    CHECK(fn_open_translated(&handle, FN_METHOD_GET, TEST_URL,
+                             FN_OPEN_ALLOW_EVICT, FN_TRANSLATE_IMAGE, 0,
+                             "fmt=ilbm") == FN_ERR_NO_HANDLES);
+    CHECK(handle == FN_INVALID_HANDLE);
+    CHECK(exchange_calls == 0);
+
+    /* Releasing one local record permits one normal Open without disturbing
+       the remaining owner. */
+    _fn_sessions[1].active = 0;
+    script_open_reply(0);
+    CHECK(fn_open(&handle, FN_METHOD_GET, TEST_URL, FN_OPEN_ALLOW_EVICT) == FN_OK);
+    CHECK(exchange_calls == 1);
+    CHECK(handle == TEST_HANDLE);
+    CHECK(_fn_sessions[0].active == 1);
+    CHECK(_fn_sessions[0].handle == 0x4000u);
+    CHECK(_fn_sessions[1].active == 1);
+    CHECK(_fn_sessions[1].handle == TEST_HANDLE);
+}
+
 static void test_none_is_plain_open(void)
 {
     static uint8_t expected[FN_MAX_PACKET_SIZE];
@@ -306,6 +360,7 @@ int main(void)
     test_validation();
     test_translated();
     test_none_is_plain_open();
+    test_session_exhaustion();
 
     if (failures != 0) {
         printf("open wire tests: %d failures\n", failures);

@@ -59,6 +59,13 @@ _fn_bbc_claim_channel:
         jmp     return0
 
 no_handles:
+        ; The channel was opened before the local slot check.  Close it and
+        ; do not expose that now-invalid channel to the caller.
+        ldy     #$00
+        tya
+        sta     (ptr1),y
+        iny
+        sta     (ptr1),y
         lda     tmp1
         jsr     _close_file
         lda     #FN_ERR_NO_HANDLES

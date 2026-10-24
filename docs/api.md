@@ -324,6 +324,12 @@ uint8_t fn_open(fn_handle_t *handle,
 
 **Returns:** `FN_OK` on success, error code on failure.
 
+`FN_OPEN_ALLOW_EVICT` is forwarded to a service that supports remote handle
+eviction; it never discards a locally tracked handle. If the library's local
+session table is full, `fn_open()` rejects the call before sending an Open and
+returns `FN_ERR_NO_HANDLES` with a non-NULL output handle set to
+`FN_INVALID_HANDLE`.
+
 **URL Schemes:**
 - `http://` - HTTP connection
 - `https://` - HTTPS connection (TLS)
@@ -633,7 +639,7 @@ const char *fn_version(void);
 |------|-------|-------------|
 | `FN_OPEN_TLS` | 0x01 | Use TLS/HTTPS (for URLs without scheme) |
 | `FN_OPEN_FOLLOW_REDIR` | 0x02 | Follow HTTP redirects |
-| `FN_OPEN_ALLOW_EVICT` | 0x04 | Allow handle eviction under memory pressure |
+| `FN_OPEN_ALLOW_EVICT` | 0x08 | Allow service-side handle eviction |
 
 ## Constants
 

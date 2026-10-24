@@ -10,6 +10,16 @@ uint8_t fn_open_exchange(fn_handle_t *handle, uint16_t req_len)
     uint8_t result;
     int8_t slot;
 
+    /* Reserve a local record before sending Open.  The common implementation
+       is foreground/non-reentrant, so this slot remains ours through the
+       exchange.  This prevents a successful remote Open from exposing a
+       handle that the local library cannot own or later close. */
+    *handle = FN_INVALID_HANDLE;
+    slot = fn_find_free_slot();
+    if (slot < 0) {
+        return FN_ERR_NO_HANDLES;
+    }
+
     _fn_transport_ctx.request = _fn_req_buf;
     _fn_transport_ctx.req_len = req_len;
     _fn_transport_ctx.response = _fn_resp_buf;
@@ -25,12 +35,6 @@ uint8_t fn_open_exchange(fn_handle_t *handle, uint16_t req_len)
     result = fn_parse_open_response();
     if (result != FN_OK) {
         return result;
-    }
-
-    slot = fn_find_free_slot();
-    if (slot < 0) {
-        *handle = _fn_parse_ctx.handle;
-        return FN_OK;
     }
 
     *handle = _fn_parse_ctx.handle;
