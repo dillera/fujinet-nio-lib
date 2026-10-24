@@ -320,7 +320,9 @@ uint8_t fn_open(fn_handle_t *handle,
 - `handle` - Output pointer for the session handle
 - `method` - HTTP method (`FN_METHOD_GET`, `FN_METHOD_POST`, etc.) or 0 for raw TCP/TLS
 - `url` - URL to connect to (e.g., `http://example.com`, `tcp://host:port`, `tls://host:port`)
-- `flags` - Optional flags (`FN_OPEN_FOLLOW_REDIR`, `FN_OPEN_ALLOW_EVICT`, `FN_OPEN_STREAM_NO_PROBE`)
+- `flags` - Optional flags (`FN_OPEN_TLS` is legacy; `FN_OPEN_FOLLOW_REDIR`,
+  `FN_OPEN_BODY_UNKNOWN`, `FN_OPEN_ALLOW_EVICT`, and
+  `FN_OPEN_STREAM_NO_PROBE` are the current options)
 
 **Returns:** `FN_OK` on success, error code on failure.
 
@@ -637,16 +639,18 @@ const char *fn_version(void);
 
 | Flag | Value | Description |
 |------|-------|-------------|
-| `FN_OPEN_TLS` | 0x01 | Use TLS/HTTPS (for URLs without scheme) |
-| `FN_OPEN_FOLLOW_REDIR` | 0x02 | Follow HTTP redirects |
-| `FN_OPEN_ALLOW_EVICT` | 0x08 | Allow service-side handle eviction |
+| `FN_OPEN_TLS` | 0x01 | Legacy TLS compatibility hint; URL schemes are authoritative, so new code should use `https://` or `tls://` explicitly |
+| `FN_OPEN_FOLLOW_REDIR` | 0x02 | Follow HTTP redirects automatically |
+| `FN_OPEN_BODY_UNKNOWN` | 0x04 | POST/PUT body length is unknown; commit it with a zero-length `fn_write()` |
+| `FN_OPEN_ALLOW_EVICT` | 0x08 | Request service-side handle eviction; it never evicts an owned local session |
+| `FN_OPEN_STREAM_NO_PROBE` | 0x10 | For a framed streaming protocol, avoid an extra probe read after each chunk |
 
 ## Constants
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `FN_MAX_URL_LEN` | 256 | Maximum URL length |
-| `FN_MAX_SESSIONS` | 3 on cc65, 4 otherwise | Maximum concurrent sessions |
+| `FN_MAX_URL_LEN` | 128 on cc65, 512 on BBC, 256 otherwise | Maximum URL length |
+| `FN_MAX_SESSIONS` | 2 on cc65, 4 otherwise | Maximum concurrent sessions |
 | `FN_MAX_CHUNK_SIZE` | 512 | Maximum read/write chunk size |
 
 ## Protocol Capability Flags
