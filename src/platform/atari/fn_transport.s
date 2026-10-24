@@ -7,6 +7,7 @@
         .export _fn_atari_capability_flags
  .ifndef FN_ATARI_TEST_SIOV
         .import __fn_transport_ctx
+        .import __fn_resp_buf
  .endif
         .importzp ptr1, ptr2
         .include "atari.inc"
@@ -33,7 +34,6 @@ capability_reply: .res 4
 poll_count: .res 1
 reply_state: .res 3
 reply_length: .res 2
-discard_buffer: .res NIO_CAPACITY
 .code
 
 _fn_transport_init:
@@ -227,8 +227,11 @@ nio_recover:
         lda #FN_ERR_TRANSPORT
         rts
 @recover_read:
-        ldx #<discard_buffer
-        ldy #>discard_buffer
+        ; Recovery deliberately discards the old response before another
+        ; application request.  Reuse the library's bounded reply workspace
+        ; rather than permanently reserving a second 512-byte buffer.
+        ldx #<__fn_resp_buf
+        ldy #>__fn_resp_buf
         jsr nio_read_reply
         bne @recover_fail
         lda #0

@@ -1,8 +1,12 @@
 ; Production fn_transport.s under a fixture-controlled SIOV peer.
-        .export _test_func, _test_result, __fn_transport_ctx
+        .export _test_func, _test_result, __fn_transport_ctx, __fn_resp_buf
         .importzp ptr1, ptr2
         .segment "BSS"
 __fn_transport_ctx: .res 10
+; Production recovery uses the library-owned bounded reply workspace rather
+; than a second private discard buffer.  Provide that real symbol here because
+; this direct assembly test intentionally does not link fn_state.o.
+__fn_resp_buf: .res 512
 request: .res 4
 response: .res 8
 request_guard_lo: .res 1

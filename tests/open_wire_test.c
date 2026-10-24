@@ -179,6 +179,26 @@ static void test_fn_open(void)
     CHECK(_fn_sessions[0].active == 0);
 }
 
+/* fn_tcp_open() is intentionally a separate archive member so ordinary URI
+ * users do not retain its formatter or 128-byte workspace.  Exercise the
+ * public helper here to keep its observable wire behavior stable. */
+static void test_tcp_open(void)
+{
+    static uint8_t expected[FN_MAX_PACKET_SIZE];
+    const char *url = "tcp://example.com:6502";
+    uint16_t expected_len;
+    fn_handle_t handle;
+
+    reset();
+    handle = FN_INVALID_HANDLE;
+    CHECK(fn_tcp_open(&handle, "example.com", 6502) == FN_OK);
+    /* TCP is its existing distinct wire method (zero), not HTTP GET. */
+    expected_len = expect_open(expected, 0, 0, url);
+    check_sent(expected, expected_len);
+    CHECK(handle == TEST_HANDLE);
+    check_session_recorded(0);
+}
+
 static void test_flag_mapping(void)
 {
     static uint8_t expected[FN_MAX_PACKET_SIZE];
@@ -356,6 +376,7 @@ static void test_none_is_plain_open(void)
 int main(void)
 {
     test_fn_open();
+    test_tcp_open();
     test_flag_mapping();
     test_validation();
     test_translated();
