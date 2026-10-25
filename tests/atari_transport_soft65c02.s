@@ -1,6 +1,8 @@
 ; Production fn_transport.s under a fixture-controlled SIOV peer.
         .export _test_func, _test_result, __fn_transport_ctx, __fn_resp_buf
+ .ifndef FN_ATARI_COMPACT
         .importzp ptr1, ptr2
+ .endif
         .segment "BSS"
 __fn_transport_ctx: .res 10
 ; Production recovery uses the library-owned bounded reply workspace rather

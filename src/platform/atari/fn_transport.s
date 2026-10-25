@@ -9,7 +9,14 @@
         .import __fn_transport_ctx
         .import __fn_resp_buf
  .endif
+ .ifdef FN_ATARI_COMPACT
+        ; Private scratch keeps assembly callers independent of cc65 zeropage.o.
+        .zeropage
+ptr1: .res 2
+ptr2: .res 2
+ .else
         .importzp ptr1, ptr2
+ .endif
         .include "atari.inc"
 
 FN_OK = $00

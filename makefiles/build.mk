@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := lib
+
 # build.mk - Core Build Logic
 #
 # This makefile handles the actual compilation for a specific target.
@@ -19,6 +21,14 @@ OBJDIR      := obj
 DISTDIR     := dist
 INCDIR      := include
 
+ifeq ($(PLATFORM),atari)
+ATARI_BACKEND ?= compact
+ifeq (,$(filter $(ATARI_BACKEND),original compact))
+$(error ATARI_BACKEND must be original or compact)
+endif
+OBJDIR := obj/$(ATARI_BACKEND)
+endif
+
 # Platform-specific source directory
 PLATFORM_DIR := $(SRCDIR)/platform/$(PLATFORM)
 
@@ -31,6 +41,10 @@ endif
 
 # Output files
 LIBRARY     := $(BUILDDIR)/$(PROGRAM)-$(TARGET)$(LIBEXT)
+
+ifeq ($(PLATFORM),atari)
+LIBRARY := $(BUILDDIR)/$(PROGRAM)-atari-$(ATARI_BACKEND)$(LIBEXT)
+endif
 
 # Common sources (shared across all platforms)
 COMMON_SRCS_DEFAULT := $(SRCDIR)/common/fn_slip.c \
@@ -163,6 +177,16 @@ endif
 PLATFORM_ASMS := $(wildcard $(PLATFORM_DIR)/*.s)
 PLATFORM_ASM_INCLUDES := $(wildcard $(PLATFORM_DIR)/*.inc)
 
+ifeq ($(PLATFORM),atari)
+ifeq ($(ATARI_BACKEND),compact)
+TARGET_ASFLAGS += --asm-define FN_ATARI_COMPACT=1
+COMMON_SRCS := $(filter-out $(addprefix $(SRCDIR)/common/,fn_checksum_fold.c fn_packet_checksum.c fn_packet_checksum_packet.c fn_packet_header.c fn_packet_parse_common.c fn_state.c fn_init.c fn_raw.c fn_packet_build_open.c fn_packet_build_rw.c fn_packet_build_misc.c),$(COMMON_SRCS))
+else
+PLATFORM_ASMS := $(filter-out $(PLATFORM_DIR)/fn_compact_%.s,$(PLATFORM_ASMS))
+PLATFORM_SRCS := $(filter-out $(PLATFORM_DIR)/fn_compact_%.c,$(PLATFORM_SRCS))
+endif
+endif
+
 # All sources
 SOURCES := $(COMMON_SRCS) $(LEGACY_SRCS) $(PLATFORM_SRCS)
 
@@ -171,6 +195,9 @@ OBJECTS_C   := $(SOURCES:.c=.o)
 OBJECTS_ASM := $(PLATFORM_ASMS:.s=.o)
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(OBJDIR)/$(TARGET)/%,$(OBJECTS_C)) \
                $(patsubst $(SRCDIR)/%,$(OBJDIR)/$(TARGET)/%,$(OBJECTS_ASM))
+
+# Rebuild when source selection or backend compiler flags change.
+$(OBJECTS): makefiles/build.mk makefiles/compiler.mk makefiles/targets.mk
 
 # Dependency files
 DEPENDS := $(OBJECTS:.o=.d)
@@ -192,6 +219,9 @@ endif
 
 # Main build target (named 'lib' to avoid conflict with build/ directory)
 lib: $(LIBRARY)
+ifeq ($(PLATFORM),atari)
+	cp $(LIBRARY) $(BUILDDIR)/$(PROGRAM)-atari$(LIBEXT)
+endif
 
 # Include dependency files
 -include $(DEPENDS)
