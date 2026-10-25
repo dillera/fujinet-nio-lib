@@ -68,6 +68,7 @@ COMMON_SRCS_DEFAULT := $(SRCDIR)/common/fn_slip.c \
                        $(SRCDIR)/common/fn_open.c \
                        $(SRCDIR)/common/fn_tcp_open.c \
                        $(SRCDIR)/common/fn_open_translated.c \
+                       $(SRCDIR)/common/fn_open_headers.c \
                        $(SRCDIR)/common/fn_rw.c \
                        $(SRCDIR)/common/fn_info_close.c \
                        $(SRCDIR)/common/fn_util.c \

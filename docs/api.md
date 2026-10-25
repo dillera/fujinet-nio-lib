@@ -422,6 +422,52 @@ Firmware without the requested translation type rejects the open with
 On BBC, any translation type other than `FN_TRANSLATE_NONE` returns
 `FN_ERR_UNSUPPORTED`.
 
+### `fn_open_headers()`
+
+Open an HTTP session with request headers and a known body length.
+
+```c
+typedef struct {
+    const char *name;
+    const char *value;
+} fn_header_t;
+
+uint8_t fn_open_headers(fn_handle_t *handle,
+                        uint8_t method,
+                        const char *url,
+                        uint8_t flags,
+                        const fn_header_t *headers,
+                        uint8_t header_count,
+                        uint32_t body_length);
+```
+
+The headers go in the Open request's header list (`u16 headerCount`, then
+`lp_u16` name and value pairs) and `body_length` in `bodyLenHint`. For a POST
+or PUT with `body_length > 0`, the firmware dispatches the request once that
+many bytes have been written with `fn_write()`, with a `Content-Length` rather
+than chunked encoding; leave out `FN_OPEN_BODY_UNKNOWN`. Firmware rejects a
+body length on other methods. With no headers and `body_length == 0` the packet
+is byte-identical to `fn_open()`.
+
+The whole request has to fit one packet (`FN_MAX_PACKET_SIZE`); a longer one,
+or a header with a `NULL` name or value, returns `FN_ERR_INVALID` without
+sending anything.
+
+```c
+static const fn_header_t headers[] = {
+    { "Authorization", "Bearer 0123abcd" },
+    { "Content-Type", "application/json" },
+};
+const char *body = "{\"Name\":\"Amiga\"}";
+
+if (fn_open_headers(&handle, FN_METHOD_PUT, "https://example.com/v1/profile", 0,
+                    headers, 2, strlen(body)) == FN_OK)
+    fn_write(handle, 0, (const uint8_t *)body, strlen(body), &written);
+```
+
+On BBC, request headers return `FN_ERR_UNSUPPORTED`; a body length up to 65535
+is passed to `fn_set_body_length()` before `fn_open()`.
+
 ### `fn_read()`
 
 Read data from an open connection.

@@ -102,6 +102,7 @@ int main(void)
     (void)&fn_wifi_get_adapter_info;
     /* Open with content translation: its own archive member. */
     (void)&fn_open_translated;
+    (void)&fn_open_headers;
 #ifdef __ATARI__
     (void)&fn_atari_query_capabilities;
     (void)&fn_atari_max_payload;

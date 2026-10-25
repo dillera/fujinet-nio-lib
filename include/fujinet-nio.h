@@ -690,6 +690,41 @@ uint8_t fn_open_translated(fn_handle_t *handle,
                            uint8_t translation_flags,
                            const char *selector);
 
+/** An HTTP request header for fn_open_headers() */
+typedef struct {
+    const char *name;
+    const char *value;
+} fn_header_t;
+
+/**
+ * @brief Open a network session with HTTP request headers and a body length.
+ *
+ * Sends header_count headers (e.g. Authorization, Content-Type) with the
+ * request. A POST or PUT with body_length > 0 is sent once that many bytes
+ * have been written with fn_write(); leave out FN_OPEN_BODY_UNKNOWN then.
+ * With no headers and no body the packet is identical to fn_open().
+ *
+ * On BBC, headers return FN_ERR_UNSUPPORTED; a body length up to 65535 goes
+ * through fn_set_body_length().
+ *
+ * @param handle        Pointer to receive the session handle
+ * @param method        HTTP method (FN_METHOD_*)
+ * @param url           URL string (null-terminated)
+ * @param flags         Open flags (FN_OPEN_*)
+ * @param headers       Request headers (may be NULL when header_count is 0)
+ * @param header_count  Number of headers
+ * @param body_length   Request body length in bytes, 0 for none
+ * @return FN_OK on success; FN_ERR_INVALID if the request does not fit one
+ *         packet; other error codes as fn_open()
+ */
+uint8_t fn_open_headers(fn_handle_t *handle,
+                        uint8_t method,
+                        const char *url,
+                        uint8_t flags,
+                        const fn_header_t *headers,
+                        uint8_t header_count,
+                        uint32_t body_length);
+
 /**
  * @brief Open a TCP connection (convenience wrapper).
  * 
