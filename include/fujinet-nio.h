@@ -1124,6 +1124,12 @@ const char *fn_error_string(uint8_t error);
  * @brief Return the last Atari SIO DSTATS value observed by the transport.
  */
 uint8_t fn_atari_last_sio_status(void);
+
+/**
+ * @brief Run the OS DCB the caller filled in through the library's SIO entry: the OS SIOV, or the
+ * high-speed driver after fn_atari_hsio_enable(). For diagnostics such as timing single frames.
+ */
+void fn_atari_sio_call(void);
 #endif
 
 /**

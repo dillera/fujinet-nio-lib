@@ -4,7 +4,7 @@
         .export _fn_transport_exchange, _fn_platform_name
         .export _fn_atari_last_sio_status, _fn_atari_proc_notify
         .export _fn_atari_query_capabilities, _fn_atari_max_payload
-        .export _fn_atari_capability_flags
+        .export _fn_atari_capability_flags, _fn_atari_sio_call
         ; For the optional high-speed SIO module (fn_hsio.s), which a program only links by calling
         ; fn_atari_hsio_enable: the call entry, the replaceable SIO vector (target - 1, entered by RTS so
         ; no indirect JMP page-crossing bug), a restore, and the request/reply length.
@@ -147,6 +147,8 @@ _fn_atari_max_payload:
 _fn_atari_capability_flags:
         lda capability_flags
         rts
+; For diagnostics: the library's SIO entry with the OS DCB as the caller filled it.
+_fn_atari_sio_call = sio_dispatch
 _fn_atari_last_sio_status:
         lda last_sio_status
         rts
