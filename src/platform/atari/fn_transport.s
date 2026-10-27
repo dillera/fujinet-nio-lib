@@ -5,6 +5,8 @@
         .export _fn_atari_last_sio_status, _fn_atari_proc_notify
         .export _fn_atari_query_capabilities, _fn_atari_max_payload
         .export _fn_atari_capability_flags, _fn_atari_sio_call
+        ; An upper bound on the response packet of the next exchange, set by a caller that knows one (0 = none).
+        .export _fn_reply_hint
         ; For the optional high-speed SIO module (fn_hsio.s), which a program only links by calling
         ; fn_atari_hsio_enable: the call entry, the replaceable SIO vector (target - 1, entered by RTS so
         ; no indirect JMP page-crossing bug), a restore, and the request/reply length.
@@ -30,12 +32,14 @@ SIO_OK = $01
 NIO_DEVICE = $7f
 NIO_CAPACITY = 512
 SIO_TIMEOUT = 60
+FEATURE_ANY_READ = $01        ; Q flag bit 0: R may ask for more than the response (it is padded)
 POLL_LIMIT = 60
 
 .data
 _platform_name: .byte "atari", 0
 .bss
 fn_sio_vec: .res 2
+_fn_reply_hint: .res 2
 last_sio_status: .res 1
 outstanding: .res 1
 proc_ready: .res 1
@@ -235,6 +239,61 @@ nio_read_reply:
         jsr sio_call
         rts
 
+; A caller that can bound the response (a sector read) skips the poll, which exists only to learn its
+; length: R asks for the bound, the firmware pads the reply, and the packet's own header says how long the
+; response really is. Only when the firmware advertised it in Q, and the bound fits the response buffer.
+; Returns A = 0 when not applicable (nothing was sent), 1 when read (reply_length = the packet length),
+; 2 when the SIO call failed or the header's length is not valid. The reply goes to (ptr2).
+nio_bounded:
+        lda _fn_reply_hint
+        ora _fn_reply_hint+1
+        beq @none
+        lda capability_flags
+        and #FEATURE_ANY_READ
+        beq @none
+        ldy #7
+        lda __fn_transport_ctx,y
+        cmp _fn_reply_hint+1
+        bcc @none
+        bne @ask
+        dey
+        lda __fn_transport_ctx,y
+        cmp _fn_reply_hint
+        bcc @none
+@ask:   lda _fn_reply_hint
+        sta reply_length
+        lda _fn_reply_hint+1
+        sta reply_length+1
+        ldx ptr2
+        ldy ptr2+1
+        jsr nio_read_reply
+        bne @failed
+        ldy #2
+        lda (ptr2),y
+        sta reply_length
+        iny
+        lda (ptr2),y
+        sta reply_length+1
+        cmp _fn_reply_hint+1    ; no longer than the bound that was asked for
+        bcc @fits
+        bne @failed
+        lda reply_length
+        cmp _fn_reply_hint
+        beq @fits
+        bcs @failed
+@fits:  lda reply_length+1
+        bne @read
+        lda reply_length
+        cmp #6                  ; at least a header
+        bcc @failed
+@read:  lda #1
+        rts
+@none:  lda #0
+        rts
+@failed:
+        lda #2
+        rts
+
 ; Retire a timed-out transaction before another W. Failure preserves state.
 nio_recover:
         lda #POLL_LIMIT
@@ -304,7 +363,8 @@ _fn_transport_exchange:
         beq @send
         jsr nio_recover
         cmp #FN_OK
-        bne @return
+        beq @send
+        rts
 @send:
         ; Recovery P uses the fixed three-byte poll size.  Reload the caller's
         ; request size before W, including reset-to-idle recovery where no R
@@ -326,6 +386,13 @@ _fn_transport_exchange:
         sta outstanding
         lda #POLL_LIMIT
         sta poll_count
+        jsr nio_bounded         ; 0: not applicable, 1: read (reply_length is its length), 2: failed
+        cmp #1
+        bne :+
+        jmp @read_done
+:       cmp #2
+        bne @wait
+        jmp @transport_error
 @wait:
         jsr nio_poll
         bcc @ready
@@ -355,7 +422,9 @@ _fn_transport_exchange:
         ldx ptr2
         ldy ptr2+1
         jsr nio_read_reply
-        bne @transport_error
+        beq @read_done
+        jmp @transport_error
+@read_done:
         ldy #8
         lda reply_length
         sta __fn_transport_ctx,y

@@ -27,8 +27,9 @@
 ; Nothing here links into a program unless it calls fn_atari_hsio_enable.
 
         .export _fn_atari_hsio_enable, _fn_atari_hsio_disable, _fn_atari_hsio_index
-        .export _fn_atari_hsio_error_count
+        .export _fn_atari_hsio_error_count, hs_vec
         .import fn_sio_call, fn_sio_vec, fn_sio_default, fn_sio_reply_length
+        .import _fn_atari_query_capabilities
 
 FN_OK = $00
 FN_ERR_UNSUPPORTED = $08
@@ -112,6 +113,11 @@ hs_active:      .res 1
 hs_reply:       .res 1
 hs_errcount:    .res 6  ; errors seen by the driver, by code: $8A..$8F (retried ones included), saturating
 
+        .data
+; The SIO entry enabling installs (the engine, entered by RTS so one less than its address). A variable
+; only so that a test can put a fixture in its place: the engine drives POKEY.
+hs_vec: .word hs_engine-1
+
         .code
 
 ; uint8_t fn_atari_hsio_enable(void)
@@ -142,10 +148,13 @@ _fn_atari_hsio_enable:
         bpl @clear
         lda #1
         sta hs_active
-        lda #<(hs_engine-1)
+        lda hs_vec
         sta fn_sio_vec
-        lda #>(hs_engine-1)
+        lda hs_vec+1
         sta fn_sio_vec+1
+        ; Ask what else the firmware offers, now through the driver (the FujiNet is at the high speed).
+        ; This is how a call can skip the poll when the firmware allows it; failure just leaves it off.
+        jsr _fn_atari_query_capabilities
         lda #FN_OK
         ldx #0
         rts

@@ -12,10 +12,6 @@ run until (CP = $w_enter OR cycle_count > 4000000)
 registers show cycle_count $$w_enter$$
 run until (CP = $w_exit OR cycle_count > 4000000)
 registers show cycle_count $$w_exit$$
-run until (CP = $p_enter OR cycle_count > 4000000)
-registers show cycle_count $$p_enter$$
-run until (CP = $p_exit OR cycle_count > 4000000)
-registers show cycle_count $$p_exit$$
 run until (CP = $r_enter OR cycle_count > 4000000)
 registers show cycle_count $$r_enter$$
 run until (CP = $r_exit OR cycle_count > 4000000)
@@ -28,9 +24,10 @@ run until (CP = $_memcpy OR cycle_count > 4000000)
 registers show cycle_count $$memcpy_entry$$
 run until (CP = $call_done OR cycle_count > 4000000)
 registers show cycle_count $$call_done$$
-assert cycle_count < 32000 $$a 256 byte read stays under 32,000 cycles in all (28,000 now)$$
+assert cycle_count < 28000 $$a 256 byte read stays under 28,000 cycles in all$$
 run until (CP = $results_stored OR cycle_count > 4000000)
 assert $_test_result + 0 = 0x00 $$the read succeeded$$
 assert $_test_result + 1 = 0x00 $$256 bytes, low$$
 assert $_test_result + 2 = 0x01 $$256 bytes, high$$
 assert $_test_result + 3 = 0xFF $$the last payload byte arrived$$
+assert $_test_result + 4 = 0x03 $$three SIO calls in all: the capability Q, the W and the R (no poll)$$

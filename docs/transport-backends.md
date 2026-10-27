@@ -69,6 +69,16 @@ new request; the backend never replays an application request automatically.
 PROC notification is opt-in: `fn_atari_proc_notify()` only latches a flag for
 an application-owned handler, and foreground code still polls `P`.
 
+**Reading without the poll.** `P` exists only to learn the length of the ready response, and the firmware
+runs the request inside the `W`, so the response is ready when `W` completes. When `Q` reports flag bit 0
+(`R` may ask for more than the response; the reply is zero padded and the response released as for an exact
+read), a call that can bound its response (`fn_disk_read_sector`: the sector capacity plus at most 21 bytes of
+framing) issues `R` for that bound straight after `W` and takes the true packet length from the FujiBus
+header, saving a transaction (about 4.6 ms at 108,800 baud). A shorter `R` is still refused. The bound is set
+through `fn_reply_hint` around the raw call; transports without the flag ignore it. `fn_atari_hsio_enable()`
+queries `Q` after switching to the high-speed driver, so the flag is known when a program turns high speed
+on; other programs can call `fn_atari_query_capabilities()`.
+
 When running through Altirra/AltirraSDL's NetSIO custom device, the bridge-facing
 side also has to follow the Atari SIO completion sequence precisely:
 

@@ -28,3 +28,4 @@ assert $_test_result + 23 = 0x05 $$five queries in all$$
 assert $_test_result + 24 = 0x00 $$no errors counted after enabling$$
 assert $_test_result + 25 = 0x00 $$a code that is not an error code counts zero$$
 assert $_test_result + 26 = 0x00 $$device errors are not counted here$$
+assert $_test_result + 27 = 0x01 $$enabling queried the capabilities (flag bit 0: R may ask for more)$$

@@ -2,12 +2,12 @@
 ; this checks what the library decides: the 3F query as sent, which answers enable accepts, and that the
 ; SIO vector moves to the driver and back.
         .export _test_func, _test_result, __fn_transport_ctx, __fn_resp_buf
-        .export fake_siov
+        .export fake_siov, fake_engine
  .ifndef FN_ATARI_COMPACT
         .importzp ptr1, ptr2
  .endif
         .import _fn_atari_hsio_enable, _fn_atari_hsio_disable, _fn_atari_hsio_index
-        .import _fn_atari_hsio_error_count
+        .import _fn_atari_hsio_error_count, hs_vec
         .segment "BSS"
 __fn_transport_ctx: .res 10
 __fn_resp_buf: .res 512
@@ -26,6 +26,10 @@ _test_result: .res 32
         .segment "CODE"
 _test_func:
         jsr _fn_transport_init
+        lda #<(fake_engine-1)   ; enabling installs this where the engine, which drives POKEY, would go
+        sta hs_vec
+        lda #>(fake_engine-1)
+        sta hs_vec+1
         lda fn_sio_vec
         sta default_lo
         lda fn_sio_vec+1
@@ -60,6 +64,8 @@ _test_func:
         sta _test_result+8                      ; 0
         lda calls
         sta _test_result+9                      ; one SIOV call, through the OS
+        jsr _fn_atari_capability_flags
+        sta _test_result+27                     ; the Q at the end of enabling read the flags
         ; The vector moved off the OS SIO.
         lda fn_sio_vec
         cmp default_lo
@@ -148,7 +154,33 @@ _test_func:
         rts
 
 ; The OS SIO as the library sees it here: record the DCB, return the configured answer.
+fake_engine:
+        jmp fake_siov
+
 fake_siov:
+        lda $0302
+        cmp #'Q'
+        bne @not_q
+        lda $0304               ; the capability query that enabling ends with: revision 1, 512, flag bit 0
+        sta ptr2
+        lda $0305
+        sta ptr2+1
+        ldy #0
+        lda #1
+        sta (ptr2),y
+        iny
+        lda #0
+        sta (ptr2),y
+        iny
+        lda #2
+        sta (ptr2),y
+        iny
+        lda #1
+        sta (ptr2),y
+        lda #1
+        sta $0303
+        rts
+@not_q:
         inc calls
         lda $0300
         sta seen_device

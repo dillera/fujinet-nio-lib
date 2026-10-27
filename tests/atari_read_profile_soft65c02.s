@@ -7,13 +7,14 @@
         .export _test_func, _test_result
         .export fake_siov, results_stored, call_start, call_done, w_enter, w_exit, p_enter, p_exit, r_enter, r_exit
         .export checksum_start, checksum_done
-        .import _fn_init, _fn_disk_read_sector, fn_sio_vec, fn_asm_packet_checksum, fn_core_len
+        .import _fn_init, _fn_atari_query_capabilities, _fn_disk_read_sector, fn_sio_vec, fn_asm_packet_checksum, fn_core_len
         .import pusha, pushax, pusheax, __fn_req_buf
         .importzp fn_core_ptr, sreg
         .segment "BSS"
 canned: .res 300
 user_data: .res 512
 user_length: .res 2
+calls: .res 1
 _test_result: .res 8
         .segment "CODE"
 ; Response packet: header (device, command, length, checksum, descriptor), a status byte, then the
@@ -73,6 +74,7 @@ checksum_done:
         sta fn_sio_vec
         lda #>(fake_siov-1)
         sta fn_sio_vec+1
+        jsr _fn_atari_query_capabilities   ; the fixture's Q reply has flag bit 0: R may ask for more
         ; fn_disk_read_sector(1, 5, user_data, 256, &user_length)
         lda #1
         jsr pusha
@@ -100,12 +102,17 @@ call_done:
         sta _test_result+2
         lda user_data+255
         sta _test_result+3
+        lda calls
+        sta _test_result+4
 results_stored:
         rts
 
 ; DCB: $0302 command, $0303 status, $0304/5 buffer, $0308/9 byte count.
 fake_siov:
+        inc calls
         lda $0302
+        cmp #'Q'
+        beq query
         cmp #'P'
         beq poll
         cmp #'R'
@@ -114,6 +121,26 @@ w_enter:
         lda #1
         sta $0303
 w_exit:
+        rts
+query:
+        lda $0304
+        sta fn_core_ptr
+        lda $0305
+        sta fn_core_ptr+1
+        ldy #0
+        lda #1
+        sta (fn_core_ptr),y
+        iny
+        lda #0
+        sta (fn_core_ptr),y
+        iny
+        lda #2
+        sta (fn_core_ptr),y
+        iny
+        lda #1                  ; flag bit 0
+        sta (fn_core_ptr),y
+        lda #1
+        sta $0303
         rts
 poll:
 p_enter:
