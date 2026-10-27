@@ -25,3 +25,6 @@ assert $_test_result + 20 = 0x09 $$and is reported$$
 assert $_test_result + 21 = 0x00 $$index 0 is accepted$$
 assert $_test_result + 22 = 0x00 $$and is reported, distinct from off$$
 assert $_test_result + 23 = 0x05 $$five queries in all$$
+assert $_test_result + 24 = 0x00 $$no errors counted after enabling$$
+assert $_test_result + 25 = 0x00 $$a code that is not an error code counts zero$$
+assert $_test_result + 26 = 0x00 $$device errors are not counted here$$

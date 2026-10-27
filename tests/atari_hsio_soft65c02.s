@@ -7,6 +7,7 @@
         .importzp ptr1, ptr2
  .endif
         .import _fn_atari_hsio_enable, _fn_atari_hsio_disable, _fn_atari_hsio_index
+        .import _fn_atari_hsio_error_count
         .segment "BSS"
 __fn_transport_ctx: .res 10
 __fn_resp_buf: .res 512
@@ -129,6 +130,21 @@ _test_func:
         jsr _fn_atari_hsio_disable
         lda calls
         sta _test_result+23                     ; 5 queries in all
+
+        ; Error counts by code: zero after enabling, and zero for codes that are not counted.
+        lda #6
+        sta reply_byte
+        jsr _fn_atari_hsio_enable
+        lda #$8c
+        jsr _fn_atari_hsio_error_count
+        sta _test_result+24                     ; 0
+        lda #$8d
+        jsr _fn_atari_hsio_error_count
+        sta _test_result+25                     ; 0: not a code
+        lda #$90
+        jsr _fn_atari_hsio_error_count
+        sta _test_result+26                     ; 0: device errors are not counted here
+        jsr _fn_atari_hsio_disable
         rts
 
 ; The OS SIO as the library sees it here: record the DCB, return the configured answer.

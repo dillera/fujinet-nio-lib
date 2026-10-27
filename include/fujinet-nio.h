@@ -137,6 +137,10 @@ uint8_t fn_atari_hsio_enable(void);
 void fn_atari_hsio_disable(void);
 /* The index in use (0-9, the POKEY divisor), or 0xFF when high speed is off. */
 uint8_t fn_atari_hsio_index(void);
+/* How often the driver met an error since enabling (saturating at 255, retried ones included):
+ * code 0x8A timeout, 0x8B NAK/no ACK, 0x8C framing, 0x8E overrun, 0x8F checksum; zero for others.
+ * An error after the ACK makes it retry the command at standard speed. */
+uint8_t fn_atari_hsio_error_count(uint8_t code);
 #endif
 
 #define FN_WIFI_MAX_SSID      32

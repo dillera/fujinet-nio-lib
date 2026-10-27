@@ -27,6 +27,7 @@
 ; Nothing here links into a program unless it calls fn_atari_hsio_enable.
 
         .export _fn_atari_hsio_enable, _fn_atari_hsio_disable, _fn_atari_hsio_index
+        .export _fn_atari_hsio_error_count
         .import fn_sio_call, fn_sio_vec, fn_sio_default, fn_sio_reply_length
 
 FN_OK = $00
@@ -109,6 +110,7 @@ STDSPD = $28            ; standard speed: POKEY divisor 40, 19200 baud
 hs_speed:       .res 1  ; the POKEY divisor to use (the index the device gave)
 hs_active:      .res 1
 hs_reply:       .res 1
+hs_errcount:    .res 6  ; errors seen by the driver, by code: $8A..$8F (retried ones included), saturating
 
         .code
 
@@ -133,6 +135,11 @@ _fn_atari_hsio_enable:
         cmp #HSIO_MAX_INDEX+1
         bcs @unsupported
         sta hs_speed
+        ldx #5                  ; a fresh count
+        lda #0
+@clear: sta hs_errcount,x
+        dex
+        bpl @clear
         lda #1
         sta hs_active
         lda #<(hs_engine-1)
@@ -161,6 +168,24 @@ _fn_atari_hsio_index:
         lda hs_speed
         rts
 @off:   lda #$FF
+        rts
+
+; uint8_t fn_atari_hsio_error_count(uint8_t code)
+; How many times the driver met this error since fn_atari_hsio_enable (saturating at 255), counting the
+; ones it retried: $8A timeout, $8B NAK or no ACK, $8C framing, $8E overrun, $8F checksum. Zero for any
+; other code. An error after the command's ACK makes the driver retry the whole command at standard
+; speed, so these say why a high-speed run fell back.
+_fn_atari_hsio_error_count:
+        sec
+        sbc #ERRTO
+        cmp #6
+        bcs @none
+        tax
+        lda hs_errcount,x
+        ldx #0
+        rts
+@none:  lda #0
+        tax
         rts
 
 ; ---------------------------------------------------------------------------------------------
@@ -229,6 +254,16 @@ hs_errto:
         lda #ERRTO              ; timeout
 hs_err:
         sta STATUS
+        sec                     ; count it, by code: ERRTO..ERRCHK are $8A..$8F
+        sbc #ERRTO
+        cmp #6
+        bcs hs_nocount
+        tax
+        lda hs_errcount,x
+        cmp #$FF
+        beq hs_nocount
+        inc hs_errcount,x
+hs_nocount:
         ldx STACKP
         txs
         jmp hs_sioend
