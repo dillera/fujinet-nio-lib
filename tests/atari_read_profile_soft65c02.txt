@@ -1,0 +1,36 @@
+memory load atari "${BINARY_PATH}"
+symbols load "${SYMBOLS_PATH}"
+registers flush
+run $init_harness until (CP = $checksum_start OR cycle_count > 2000000)
+registers show cycle_count $$checksum_start$$
+run until (CP = $checksum_done OR cycle_count > 2000000)
+registers show cycle_count $$checksum_done$$
+run until (CP = $call_start OR cycle_count > 2000000)
+assert CP = $call_start $$reached the read$$
+registers show cycle_count $$call_start$$
+run until (CP = $w_enter OR cycle_count > 4000000)
+registers show cycle_count $$w_enter$$
+run until (CP = $w_exit OR cycle_count > 4000000)
+registers show cycle_count $$w_exit$$
+run until (CP = $p_enter OR cycle_count > 4000000)
+registers show cycle_count $$p_enter$$
+run until (CP = $p_exit OR cycle_count > 4000000)
+registers show cycle_count $$p_exit$$
+run until (CP = $r_enter OR cycle_count > 4000000)
+registers show cycle_count $$r_enter$$
+run until (CP = $r_exit OR cycle_count > 4000000)
+registers show cycle_count $$r_exit$$
+run until (CP = $_fn_parse_response_header OR cycle_count > 4000000)
+registers show cycle_count $$parse_entry$$
+run until (CP = $fn_asm_packet_checksum OR cycle_count > 4000000)
+registers show cycle_count $$checksum_entry$$
+run until (CP = $_memcpy OR cycle_count > 4000000)
+registers show cycle_count $$memcpy_entry$$
+run until (CP = $call_done OR cycle_count > 4000000)
+registers show cycle_count $$call_done$$
+assert cycle_count < 32000 $$a 256 byte read stays under 32,000 cycles in all (28,000 now)$$
+run until (CP = $results_stored OR cycle_count > 4000000)
+assert $_test_result + 0 = 0x00 $$the read succeeded$$
+assert $_test_result + 1 = 0x00 $$256 bytes, low$$
+assert $_test_result + 2 = 0x01 $$256 bytes, high$$
+assert $_test_result + 3 = 0xFF $$the last payload byte arrived$$

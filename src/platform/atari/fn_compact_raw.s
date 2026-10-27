@@ -177,26 +177,29 @@ return:
 io_error:
     lda #5
     bne return
+; Copies copy_len bytes from (fn_core_ptr) to (dest), forwards. Whole pages first, then the rest, so a
+; byte costs 16 cycles (a 267 byte response took about 16,500 cycles with 16-bit pointer arithmetic each byte).
 copy_bytes:
-    lda copy_len
-    ora copy_len+1
-    beq copy_done
     ldy #0
+    ldx copy_len+1
+    beq copy_tail
+copy_page:
     lda (fn_core_ptr),y
     sta (dest),y
-    inc fn_core_ptr
-    bne :+
+    iny
+    bne copy_page
     inc fn_core_ptr+1
-:
-    inc dest
-    bne :+
     inc dest+1
-:
-    lda copy_len
-    bne :+
-    dec copy_len+1
-:
-    dec copy_len
-    jmp copy_bytes
+    dex
+    bne copy_page
+copy_tail:
+    ldx copy_len
+    beq copy_done
+copy_byte:
+    lda (fn_core_ptr),y
+    sta (dest),y
+    iny
+    dex
+    bne copy_byte
 copy_done:
     rts

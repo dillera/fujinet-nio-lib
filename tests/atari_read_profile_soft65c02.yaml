@@ -1,0 +1,23 @@
+name: Atari fn_disk_read_sector cycle profile
+configs:
+  - ../../cc65-clib/tests/harness/harness.yaml
+config_file: ./atari_read_profile.ld65.cfg
+src_files:
+  - atari_read_profile_soft65c02.s
+ld_flags:
+  - -t
+  - none
+  - build/fujinet-nio-atari-compact.lib
+  - -u
+  - _fn_disk_read_sector
+  - -u
+  - _fn_init
+  - -u
+  - fn_sio_vec
+  - -u
+  - fn_asm_packet_checksum
+  - -u
+  - fn_core_len
+  - -u
+  - fn_core_ptr
+test_script: atari_read_profile_soft65c02.txt
