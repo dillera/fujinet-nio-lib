@@ -5,6 +5,10 @@
         .export _fn_atari_last_sio_status, _fn_atari_proc_notify
         .export _fn_atari_query_capabilities, _fn_atari_max_payload
         .export _fn_atari_capability_flags
+        ; For the optional high-speed SIO module (fn_hsio.s), which a program only links by calling
+        ; fn_atari_hsio_enable: the call entry, the replaceable SIO vector (target - 1, entered by RTS so
+        ; no indirect JMP page-crossing bug), a restore, and the request/reply length.
+        .export fn_sio_call, fn_sio_vec, fn_sio_default, fn_sio_reply_length
  .ifndef FN_ATARI_TEST_SIOV
         .import __fn_transport_ctx
         .import __fn_resp_buf
@@ -31,6 +35,7 @@ POLL_LIMIT = 60
 .data
 _platform_name: .byte "atari", 0
 .bss
+fn_sio_vec: .res 2
 last_sio_status: .res 1
 outstanding: .res 1
 proc_ready: .res 1
@@ -43,7 +48,25 @@ reply_state: .res 3
 reply_length: .res 2
 .code
 
+fn_sio_reply_length = reply_length
+fn_sio_call = sio_call
+
+; The SIO entry sio_call uses: the OS SIOV unless fn_atari_hsio_enable replaced it.
+fn_sio_default:
+        lda #<(siov-1)
+        sta fn_sio_vec
+        lda #>(siov-1)
+        sta fn_sio_vec+1
+        rts
+sio_dispatch:
+        lda fn_sio_vec+1
+        pha
+        lda fn_sio_vec
+        pha
+        rts
+
 _fn_transport_init:
+        jsr fn_sio_default
         lda #0
         sta outstanding
         sta proc_ready
@@ -161,7 +184,7 @@ sio_call:
         sta dtimlo
         lda #0
         sta dunuse
-        jsr siov
+        jsr sio_dispatch
         lda dstats
         sta last_sio_status
         cmp #SIO_OK

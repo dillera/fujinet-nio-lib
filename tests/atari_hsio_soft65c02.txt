@@ -1,0 +1,27 @@
+memory load atari "${BINARY_PATH}"
+symbols load "${SYMBOLS_PATH}"
+registers flush
+run $init_harness until (CP = $end_init_harness OR cycle_count > 250000)
+assert CP = $end_init_harness $$hsio decisions completed$$
+assert $_test_result + 0 = 0xFF $$high speed is off at the start$$
+assert $_test_result + 1 = 0x00 $$an offered index 6 enables$$
+assert $_test_result + 2 = 0x06 $$the index in use is the one answered$$
+assert $_test_result + 3 = 0x7F $$3F goes to the native endpoint$$
+assert $_test_result + 4 = 0x01 $$unit 1$$
+assert $_test_result + 5 = 0x3F $$the command is 3F$$
+assert $_test_result + 6 = 0x40 $$3F is a read$$
+assert $_test_result + 7 = 0x01 $$one byte is read$$
+assert $_test_result + 8 = 0x00 $$byte count high is zero$$
+assert $_test_result + 9 = 0x01 $$the query went through the OS SIO once$$
+assert $_test_result + 10 = 0x01 $$the SIO vector moved to the driver$$
+assert $_test_result + 11 = 0xFF $$disable turns it off$$
+assert $_test_result + 12 = 0x01 $$disable restores the OS SIO vector$$
+assert $_test_result + 13 = 0x08 $$a NAKed 3F is unsupported$$
+assert $_test_result + 14 = 0xFF $$and leaves it off$$
+assert $_test_result + 17 = 0x08 $$index 10 (read as a Happy 1050) is refused$$
+assert $_test_result + 18 = 0xFF $$and leaves it off$$
+assert $_test_result + 19 = 0x00 $$index 9 is accepted$$
+assert $_test_result + 20 = 0x09 $$and is reported$$
+assert $_test_result + 21 = 0x00 $$index 0 is accepted$$
+assert $_test_result + 22 = 0x00 $$and is reported, distinct from off$$
+assert $_test_result + 23 = 0x05 $$five queries in all$$

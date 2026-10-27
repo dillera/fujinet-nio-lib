@@ -1,0 +1,10 @@
+name: Atari high-speed SIO enable/disable decisions
+configs:
+  - ../../cc65-clib/tests/harness/harness.yaml
+src_files:
+  - atari_hsio_soft65c02.s
+  - ../src/platform/atari/fn_hsio.s
+ld_flags:
+  - -t
+  - none
+test_script: atari_hsio_soft65c02.txt

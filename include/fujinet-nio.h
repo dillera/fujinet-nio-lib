@@ -122,6 +122,21 @@ uint16_t fn_atari_max_payload(void);
 uint8_t fn_atari_capability_flags(void);
 /* ISR-safe readiness latch for an application-owned/chained VPRCED handler. */
 void fn_atari_proc_notify(void);
+
+/* High-speed SIO for the native endpoint (docs/atari/hsio.md). The Atari OS only speaks 19200
+ * baud, and a SIO speed driver such as the U1MB's speeds up disks but not this endpoint, so a
+ * program that wants it asks the FujiNet for its speed index (the Happy/Speedy 3F query) and from
+ * then on sends every native call through a driver of its own (derived from Matthias Reichl's,
+ * GPL). Opt-in: nothing of it is linked into a program that does not call fn_atari_hsio_enable.
+ * Call it after fn_init.
+ *
+ * Returns FN_OK, or FN_ERR_UNSUPPORTED when the FujiNet has no high-speed index set (`sio.hsio`
+ * on its console) or answers one that is not usable; native calls then stay on the OS SIO. */
+uint8_t fn_atari_hsio_enable(void);
+/* Native calls use the OS SIO again. */
+void fn_atari_hsio_disable(void);
+/* The index in use (0-9, the POKEY divisor), or 0xFF when high speed is off. */
+uint8_t fn_atari_hsio_index(void);
 #endif
 
 #define FN_WIFI_MAX_SSID      32

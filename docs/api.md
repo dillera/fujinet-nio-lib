@@ -676,3 +676,13 @@ Session handle type. Opaque handle returned by `fn_open()` and `fn_tcp_open()`.
 ```c
 typedef uint8_t fn_handle_t;
 ```
+
+## Atari: high-speed SIO for the native endpoint
+
+```c
+uint8_t fn_atari_hsio_enable(void);   /* FN_OK, or FN_ERR_UNSUPPORTED if no index is set on the FujiNet */
+void    fn_atari_hsio_disable(void);
+uint8_t fn_atari_hsio_index(void);    /* 0-9 in use, or 0xFF when off */
+```
+
+Opt-in, after `fn_init()`. See [atari/hsio.md](atari/hsio.md).
