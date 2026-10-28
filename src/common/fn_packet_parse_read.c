@@ -21,6 +21,10 @@ uint8_t fn_parse_read_response(void)
     }
 
     _fn_parse_ctx.flags = response[_fn_parse_ctx.data_offset + 1];
+    /* The reserved u16 carries the bytes the device still holds, when flag bit3 says so. */
+    _fn_parse_ctx.available = (_fn_parse_ctx.flags & FN_READ_AVAILABLE) != 0
+                                  ? FN_READ_LE16(response, _fn_parse_ctx.data_offset + 2)
+                                  : 0;
     _fn_parse_ctx.handle = FN_READ_LE16(response, _fn_parse_ctx.data_offset + 4);
     _fn_parse_ctx.offset_echo = FN_READ_LE32(response, _fn_parse_ctx.data_offset + 6);
     actual_data_len = FN_READ_LE16(response, _fn_parse_ctx.data_offset + 10);

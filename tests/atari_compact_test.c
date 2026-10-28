@@ -16,6 +16,7 @@ uint16_t ref_read(uint8_t *,fn_handle_t,uint32_t,uint16_t);
 uint16_t ref_write(uint8_t *,fn_handle_t,uint32_t,const uint8_t *,uint16_t);
 uint16_t ref_close(uint8_t *,fn_handle_t);
 uint16_t ref_info(uint8_t *,fn_handle_t);
+uint16_t ref_ready_packet(uint8_t *);
 uint8_t ref_raw(uint8_t,uint8_t,const void *,uint16_t,void *,uint16_t,fn_raw_response_t *);
 uint8_t ref_init(void);
 static unsigned checks;
@@ -157,6 +158,7 @@ int main(void) {
         reset();equal(fn_build_close_packet(a,n),ref_close(b,n));
         reset();equal(fn_build_info_packet(a,n),ref_info(b,n));
     }
+    reset();equal(fn_build_ready_packet(a),ref_ready_packet(b));   /* the Ready request: assembly against the C original */
     for(i=0;i<8;++i) {
         uint16_t h;
         uint32_t offset;

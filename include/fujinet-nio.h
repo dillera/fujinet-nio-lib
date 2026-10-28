@@ -312,6 +312,9 @@ uint8_t fn_wifi_scan(uint16_t offset, uint8_t limit, fn_wifi_scan_record_t *reco
 /** Additional bytes are already immediately available after this chunk */
 #define FN_READ_MORE_AVAILABLE 0x04
 
+/** The firmware reports how many bytes it still holds for the handle (fn_read_available() is meaningful) */
+#define FN_READ_AVAILABLE   0x08
+
 /* ============================================================================
  * Info Flags
  * ============================================================================ */
@@ -822,6 +825,42 @@ uint8_t fn_read(fn_handle_t handle,
                 uint16_t max_len,
                 uint16_t *bytes_read,
                 uint8_t *flags);
+
+/**
+ * @brief Bytes the firmware still held for the handle after the most recent fn_read().
+ *
+ * Meaningful when that fn_read() returned FN_READ_AVAILABLE in its flags (the firmware reports it; older
+ * firmware does not, and this returns 0). A lower bound: more may arrive. Saturates at 65535. A client
+ * reading a length-prefixed or request/reply stream uses it to know whether the next fn_read() will find data
+ * already waiting, without a call that answers FN_ERR_NOT_READY.
+ */
+uint16_t fn_read_available(void);
+
+/** Flags of an fn_ready_entry_t. */
+#define FN_READY_READ 0x01 /* fn_read() would not answer FN_ERR_NOT_READY (data held, end of stream or an error) */
+#define FN_READY_INFO 0x02 /* fn_info() would answer (HTTP: the status and headers have arrived) */
+
+typedef struct {
+    fn_handle_t handle;
+    uint8_t flags;       /* FN_READY_* */
+    uint16_t available;  /* bytes held for the handle (saturating), 0 when the protocol cannot say */
+} fn_ready_entry_t;
+
+/**
+ * @brief Which of this client's sessions can be read or queried now.
+ *
+ * One small call replaces a speculative fn_read() or fn_info() on each handle: wait (on a timer, or on a
+ * hardware hint such as the Atari PROC line, see fn_atari_proc_enable) and then ask once. Only ready sessions
+ * are listed. It is a hint: an entry can be early or for data another call already took, and the call it
+ * announces still answers FN_ERR_NOT_READY if so. A client that keeps calling this is not idle for the
+ * firmware's idle timeout.
+ *
+ * @param entries      Buffer for the entries
+ * @param max_entries  Capacity of the buffer
+ * @param count        Receives the number of entries stored (at most max_entries)
+ * @return FN_OK, or FN_ERR_UNSUPPORTED from firmware that predates the command (poll each handle instead)
+ */
+uint8_t fn_ready(fn_ready_entry_t *entries, uint8_t max_entries, uint8_t *count);
 
 /**
  * @brief Get session information.

@@ -70,6 +70,7 @@ COMMON_SRCS_DEFAULT := $(SRCDIR)/common/fn_slip.c \
                        $(SRCDIR)/common/fn_open_translated.c \
                        $(SRCDIR)/common/fn_rw.c \
                        $(SRCDIR)/common/fn_info_close.c \
+                       $(SRCDIR)/common/fn_ready.c \
                        $(SRCDIR)/common/fn_util.c \
                        $(SRCDIR)/common/fn_ext.c \
                        $(SRCDIR)/common/fn_clock_common.c \

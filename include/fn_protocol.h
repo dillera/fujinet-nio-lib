@@ -85,6 +85,7 @@ extern "C" {
 
 /** Get session information */
 #define FN_CMD_INFO    0x05
+#define FN_CMD_READY   0x08
 
 #define FN_WIFI_PROTOCOL_VERSION 1
 #define FN_WIFI_CMD_GET_STATUS   0x01

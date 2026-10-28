@@ -22,7 +22,7 @@ override PROGRAM := fujinet-nio
 # Phony targets
 .PHONY: all clean help disk-bbc disk-bbc-clib test-legacy test-mount-resolve \
 	test-appstore-read test-slot-catalog test-bbc test-bbc-scripted \
-	test-bbc-real test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-library-link \
+	test-bbc-real test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-ready-wire test-library-link \
 	test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry test \
 	test-all-build check msdos $(TARGETS) $(EXTRA_TARGETS)
 
@@ -141,6 +141,10 @@ test-open-wire:
 	@echo "Running fn_open / fn_open_translated wire test..."
 	bash ./tests/run_open_wire_test.sh
 
+test-ready-wire:
+	@echo "Running fn_ready / fn_read_available wire test..."
+	bash ./tests/run_ready_wire_test.sh
+
 test-library-link: linux
 	@echo "Running public API library-link test..."
 	bash ./tests/run_library_link_test.sh
@@ -176,7 +180,7 @@ test-all-build:
 	@echo "Building all configured library targets..."
 	$(MAKE) all
 
-test: test-library-link test-legacy test-mount-resolve test-appstore-read test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry
+test: test-library-link test-legacy test-mount-resolve test-appstore-read test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-ready-wire test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry
 
 # Fast required change check: compile every configured target, then run the
 # host-side tests and public archive-link test. Keep this as a recipe rather

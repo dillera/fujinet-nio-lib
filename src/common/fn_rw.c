@@ -8,6 +8,7 @@
 #endif
 
 static fn_write_diagnostics_t last_write_diagnostics;
+static uint16_t _fn_last_read_available;
 
 void fn_write_get_last_diagnostics(fn_write_diagnostics_t *diagnostics)
 {
@@ -208,6 +209,7 @@ uint8_t fn_read(fn_handle_t handle,
         return result;
     }
 
+    _fn_last_read_available = _fn_parse_ctx.available;
     if (flags != NULL) {
         *flags = _fn_parse_ctx.flags;
     }
@@ -218,4 +220,9 @@ uint8_t fn_read(fn_handle_t handle,
     }
 
     return FN_OK;
+}
+
+uint16_t fn_read_available(void)
+{
+    return _fn_last_read_available;
 }

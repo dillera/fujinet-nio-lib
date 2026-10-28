@@ -1,5 +1,5 @@
 .export _fn_build_open_packet, _fn_build_read_packet, _fn_build_write_packet
-.export _fn_build_close_packet, _fn_build_info_packet
+.export _fn_build_close_packet, _fn_build_info_packet, _fn_build_ready_packet
 .import popax, popa, fn_asm_packet_checksum, fn_core_len
 .importzp fn_core_ptr
 .zeropage
@@ -84,6 +84,17 @@ _fn_build_open_packet:
     iny
     dex
     bne @zero
+    jmp checksum
+_fn_build_ready_packet:
+    sta buffer
+    stx buffer+1
+    lda #8
+    sta command
+    lda #7
+    sta length
+    lda #0
+    sta length+1
+    jsr header
     jmp checksum
 _fn_build_close_packet:
     ldy #4

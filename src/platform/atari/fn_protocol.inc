@@ -34,6 +34,7 @@ FN_CMD_READ      = $02
 FN_CMD_WRITE     = $03
 FN_CMD_CLOSE     = $04
 FN_CMD_INFO      = $05
+FN_CMD_READY     = $08
 
 ; Protocol Version
 FN_PROTOCOL_VERSION = $01

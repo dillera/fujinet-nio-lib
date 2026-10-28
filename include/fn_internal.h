@@ -52,6 +52,7 @@ typedef struct {
     uint8_t status;
     uint8_t flags;
     uint8_t proto_flags;
+    uint16_t available;   /* last: assembly code addresses the fields above by offset */
 } fn_parse_ctx_t;
 
 extern fn_transport_ctx_t _fn_transport_ctx;
@@ -169,6 +170,7 @@ uint16_t fn_build_close_packet(uint8_t *buffer, fn_handle_t handle);
  * Build an Info request packet.
  */
 uint16_t fn_build_info_packet(uint8_t *buffer, fn_handle_t handle);
+uint16_t fn_build_ready_packet(uint8_t *buffer);
 
 /* ============================================================================
  * Response Parsing Functions
