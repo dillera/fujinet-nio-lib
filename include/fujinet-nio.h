@@ -141,6 +141,23 @@ uint8_t fn_atari_hsio_index(void);
  * code 0x8A timeout, 0x8B NAK/no ACK, 0x8C framing, 0x8E overrun, 0x8F checksum; zero for others.
  * An error after the ACK makes it retry the command at standard speed. */
 uint8_t fn_atari_hsio_error_count(uint8_t code);
+
+/* The PROC (proceed) interrupt (docs/atari/proc.md). The FujiNet drives the PROC line to the Atari's PIA,
+ * whose falling edge raises the OS PROCEED interrupt (the VPRCED vector). fn_atari_proc_enable installs a
+ * handler that counts each interrupt, latches a pending flag and chains to the handler that was there,
+ * and turns the PIA interrupt on. The program then polls fn_atari_proc_pending() (or fn_atari_proc_count())
+ * from its own loop instead of sending P over SIO. Opt-in: nothing of it is linked into a program that
+ * does not call fn_atari_proc_enable. Returns FN_OK; safe to call again.
+ *
+ * The OS clears the interrupt enable when it drives the cassette motor, so a program that uses the
+ * cassette must call fn_atari_proc_enable again afterwards. Polling with P stays correct without PROC. */
+uint8_t fn_atari_proc_enable(void);
+/* Interrupt off, the previous VPRCED handler back. */
+void fn_atari_proc_disable(void);
+/* 1 if a PROC interrupt came since the last call (or since enabling), and clears it; else 0. */
+uint8_t fn_atari_proc_pending(void);
+/* PROC interrupts since enabling (wraps at 65536). */
+uint16_t fn_atari_proc_count(void);
 #endif
 
 #define FN_WIFI_MAX_SSID      32

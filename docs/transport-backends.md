@@ -67,7 +67,10 @@ issues fixed-size `Q`; ordinary calls do not probe. Timeout retains the
 outstanding request, and later traffic polls and consumes it before sending a
 new request; the backend never replays an application request automatically.
 PROC notification is opt-in: `fn_atari_proc_notify()` only latches a flag for
-an application-owned handler, and foreground code still polls `P`.
+an application-owned handler, and foreground code still polls `P`. `fn_atari_proc_enable()` is the ready-made
+handler (it counts, latches and chains the previous `VPRCED`; `fn_atari_proc_pending()` and
+`fn_atari_proc_count()` read it), linked only by a program that calls it. The firmware does not assert PROC
+for the protocol yet: see `repos/fujinet-nio/docs/atari/proc.md` for the test that proves the line.
 
 **Reading without the poll.** `P` exists only to learn the length of the ready response, and the firmware
 runs the request inside the `W`, so the response is ready when `W` completes. When `Q` reports flag bit 0

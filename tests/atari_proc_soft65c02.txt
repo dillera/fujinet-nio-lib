@@ -1,0 +1,26 @@
+memory load atari "${BINARY_PATH}"
+symbols load "${SYMBOLS_PATH}"
+registers flush
+run $init_harness until (CP = $end_init_harness OR cycle_count > 250000)
+assert CP = $end_init_harness $$proc test completed$$
+assert $_test_result + 0 = 0x00 $$enable returns FN_OK$$
+assert $_test_result + 1 = 0x01 $$the handler is installed at VPRCED$$
+assert $_test_result + 2 = 0x01 $$the PIA interrupt is enabled$$
+assert $_test_result + 3 = 0x34 $$the other PACTL bits are untouched$$
+assert $_test_result + 4 = 0x00 $$nothing is pending before an interrupt$$
+assert $_test_result + 5 = 0x00 $$the count starts at zero (low)$$
+assert $_test_result + 6 = 0x00 $$and high$$
+assert $_test_result + 7 = 0x01 $$an interrupt makes it pending$$
+assert $_test_result + 8 = 0x00 $$reading the pending flag clears it$$
+assert $_test_result + 9 = 0x01 $$the previous handler is chained to$$
+assert $_test_result + 10 = 0x5A $$A is back as the OS pushed it$$
+assert $_test_result + 11 = 0x01 $$the library's own latch is set$$
+assert $_test_result + 12 = 0x01 $$one interrupt counted$$
+assert $_test_result + 13 = 0x03 $$three counted$$
+assert $_test_result + 14 = 0x00 $$count high byte$$
+assert $_test_result + 15 = 0x03 $$the previous handler ran for each$$
+assert $_test_result + 16 = 0x03 $$enabling again does not reset the count$$
+assert $_test_result + 17 = 0x34 $$disable turns the interrupt off$$
+assert $_test_result + 18 = 0x01 $$disable puts the previous handler back$$
+assert $_test_result + 19 = 0x01 $$a second disable changes nothing$$
+assert $_test_result + 20 = 0x00 $$a new enable starts a fresh count$$
