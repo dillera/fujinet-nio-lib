@@ -132,6 +132,8 @@ static int test_mount_passes_explicit_type(void)
     response_status = 0;
     if (fn_disk_mount(1, "host:/mac/system.image", 1, FN_DISK_TYPE_DC42, 0, &info) != FN_OK ||
         last_command != 0x01 || last_payload[3] != 5) { puts("dc42 type mismatch"); return 1; }
+    if (fn_disk_mount(1, "host:/games/app.xex", 1, FN_DISK_TYPE_XEXBOOT, 0, &info) != FN_OK ||
+        last_command != 0x01 || last_payload[3] != 6) { puts("xexboot type mismatch"); return 1; }
     return 0;
 }
 

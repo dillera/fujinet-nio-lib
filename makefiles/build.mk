@@ -106,7 +106,16 @@ COMMON_SRCS_DEFAULT := $(SRCDIR)/common/fn_slip.c \
                        $(SRCDIR)/common/fn_mount_resolve_default.c \
                        $(SRCDIR)/common/fn_resolve_mount_target.c \
                        $(SRCDIR)/common/fn_format_mount_display.c \
-                       $(SRCDIR)/common/fn_disk.c \
+                       $(SRCDIR)/common/fn_disk_common.c \
+                       $(SRCDIR)/common/fn_disk_le_get.c \
+                       $(SRCDIR)/common/fn_disk_put_u16le.c \
+                       $(SRCDIR)/common/fn_disk_put_u32le.c \
+                       $(SRCDIR)/common/fn_disk_parse_info.c \
+                       $(SRCDIR)/common/fn_disk_mount.c \
+                       $(SRCDIR)/common/fn_disk_info.c \
+                       $(SRCDIR)/common/fn_disk_read_sector.c \
+                       $(SRCDIR)/common/fn_disk_write_sector.c \
+                       $(SRCDIR)/common/fn_disk_context.c \
                        $(SRCDIR)/common/fn_raw.c
 COMMON_SRCS_DEFAULT += $(SRCDIR)/common/fn_wifi.c $(SRCDIR)/common/fn_wifi_adapter.c \
                        $(SRCDIR)/common/fn_fuji_info.c
