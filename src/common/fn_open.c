@@ -87,6 +87,9 @@ uint8_t fn_open_prepare(const fn_handle_t *handle,
     if (flags & FN_OPEN_STREAM_NO_PROBE) {
         open_flags |= FN_OPEN_FLAG_STREAM_NO_PROBE;
     }
+    if (flags & FN_OPEN_KEEP) {
+        open_flags |= FN_OPEN_FLAG_KEEP;
+    }
 
     *wire_flags = open_flags;
     return FN_OK;

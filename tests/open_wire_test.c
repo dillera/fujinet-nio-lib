@@ -225,6 +225,19 @@ static void test_flag_mapping(void)
     expected_len = expect_open(expected, FN_METHOD_GET, FN_OPEN_FLAG_STREAM_NO_PROBE, TEST_URL);
     check_sent(expected, expected_len);
 
+    /* The keep flag goes out as wire bit5, alone and with the others. */
+    reset();
+    CHECK(fn_open(&handle, 0, TEST_URL, FN_OPEN_KEEP) == FN_OK);
+    expected_len = expect_open(expected, 0, FN_OPEN_FLAG_KEEP, TEST_URL);
+    check_sent(expected, expected_len);
+
+    reset();
+    CHECK(fn_open(&handle, 0, TEST_URL, FN_OPEN_KEEP | FN_OPEN_ALLOW_EVICT | FN_OPEN_STREAM_NO_PROBE) == FN_OK);
+    expected_len = expect_open(expected, 0,
+                               FN_OPEN_FLAG_KEEP | FN_OPEN_FLAG_ALLOW_EVICT | FN_OPEN_FLAG_STREAM_NO_PROBE,
+                               TEST_URL);
+    check_sent(expected, expected_len);
+
     /* fn_open_translated() maps the flags the same way. */
     reset();
     CHECK(fn_open_translated(&handle, FN_METHOD_GET, TEST_URL,

@@ -192,6 +192,7 @@ extern "C" {
 
 /** Streaming read policy: return current chunk without an extra probe read */
 #define FN_OPEN_FLAG_STREAM_NO_PROBE 0x10
+#define FN_OPEN_FLAG_KEEP          0x20
 
 /* ============================================================================
  * Open Response Flags (Wire Format)

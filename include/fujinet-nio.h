@@ -292,6 +292,13 @@ uint8_t fn_wifi_scan(uint16_t offset, uint8_t limit, fn_wifi_scan_record_t *reco
 /** Streaming protocol is self-framed; avoid an extra probe read after each chunk */
 #define FN_OPEN_STREAM_NO_PROBE 0x10
 
+/** Keep the session until it is closed. The firmware closes a session that sees no request for a long time
+ *  (20 minutes by default, wall clock) so a client that went away does not hold a handle; a session opened
+ *  with this flag is exempt, and is never evicted to make room (an Open with FN_OPEN_ALLOW_EVICT gets
+ *  FN_ERR_BUSY if every handle is kept). For a long-lived connection that may be quiet for a long time.
+ *  Firmware that predates it ignores the bit. Not available on the BBC's direct OSFIND open path. */
+#define FN_OPEN_KEEP 0x20
+
 /* ============================================================================
  * Read Response Flags
  * ============================================================================ */
