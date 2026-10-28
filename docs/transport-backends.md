@@ -70,7 +70,10 @@ PROC notification is opt-in: `fn_atari_proc_notify()` only latches a flag for
 an application-owned handler, and foreground code still polls `P`. `fn_atari_proc_enable()` is the ready-made
 handler (it counts, latches and chains the previous `VPRCED`; `fn_atari_proc_pending()` and
 `fn_atari_proc_count()` read it), linked only by a program that calls it. The firmware does not assert PROC
-for the protocol yet: see `repos/fujinet-nio/docs/atari/proc.md` for the test that proves the line.
+for the protocol on its own: with `sio.tune proc 1` it pulses PROC when a TCP session of this client becomes
+readable and sets `Q` flag bit 1 (`FN_ATARI_CAP_PROC`), so a program can enable the handler and call
+`fn_read` when `fn_atari_proc_pending()` says so instead of in a loop. See
+`repos/fujinet-nio/docs/atari/proc.md`.
 
 **Reading without the poll.** `P` exists only to learn the length of the ready response, and the firmware
 runs the request inside the `W`, so the response is ready when `W` completes. When `Q` reports flag bit 0

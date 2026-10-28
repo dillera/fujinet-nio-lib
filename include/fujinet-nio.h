@@ -113,7 +113,10 @@ extern "C" {
 
 #ifdef __ATARI__
 /* Optional native-SIO capability query.  Never performed implicitly. */
-#define FN_ATARI_CAP_PROC 0x01u
+/* Bits of fn_atari_capability_flags(). */
+#define FN_ATARI_CAP_ANY_READ 0x01u /* R may ask for more than the response; it is zero padded */
+#define FN_ATARI_CAP_PROC     0x02u /* the FujiNet pulses PROC when a network session becomes readable
+                                     * (`sio.tune proc 1`); see fn_atari_proc_enable */
 
 uint8_t fn_atari_query_capabilities(void);
 uint16_t fn_atari_max_payload(void);
