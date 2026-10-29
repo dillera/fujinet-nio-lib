@@ -17,7 +17,10 @@ make atari ATARI_BACKEND=original
 Every `make atari` copies the selected archive to the established public path
 `build/fujinet-nio-atari.lib`; switching does not depend on timestamps of that
 canonical copy. Source selection and compiler makefiles are object dependencies.
-The original portable C implementations remain unchanged and selectable.
+The original portable C implementations remain unchanged and selectable for
+the compact backend's packet/transport routines. Both Atari backends use the
+same Atari-specific ListPages assembly wrapper; other targets retain their
+existing source selection, and the portable C is used as the test reference.
 Other targets continue using their established sources. `make check
 ATARI_BACKEND=original` preserves the original canonical archive even while
 building and testing the separate compact archive.
@@ -36,7 +39,7 @@ Open/Read/Write/Close/Info packet builders. State data is a separate archive
 member so Clock and raw users do not pull in session lookup code. C wrappers
 are separate from the runtime-free raw/checksum cores.
 
-High-level Clock, File/Network/session operations and Disk codecs remain C.
+High-level Clock, other File/Network/session operations and Disk codecs remain C.
 Their wire behavior and especially Disk's opposite-buffer copy ordering are
 already established. The smaller shared packet/raw routines benefit them
 without duplicating their more complex service validation. Disk's C object
@@ -129,3 +132,46 @@ Final cross-repository acceptance additionally runs unchanged fnaccept against
 both production NetSIO and embedded AltirraSDL, including rejected W,
 malformed R length, interrupted R and reset-after-READY cases. The workspace
 acceptance record owns those adapter-specific results and size evidence.
+
+## ListPages size and cycle comparison
+
+The Atari ListPages wrapper is shared by the compact and original Atari
+backends. It uses the cc65 calling convention and `fn_raw_call`, with ten bytes
+of private zero page and twelve bytes of static scratch. Like the Atari raw
+transport, it is synchronous and non-reentrant. Its public struct offsets are
+checked at compile time. Other platforms' source selection is unchanged.
+
+Measured on the workspace Atari `nio-config` build with cc65 V2.19
+(Git 37d4bb24), against library commit
+`134678e97d77a934795a2adaf607934a6f0d79fc`:
+
+| Measurement | Portable C | Atari assembly | Difference |
+| --- | ---: | ---: | ---: |
+| `fn_file_list_pages.o` CODE | 1,427 B | 469 B | -958 B |
+| Object BSS | 0 B | 12 B | +12 B |
+| Object zero page | 0 B | 10 B | +10 B |
+| Linked app MAIN free | 327 B | 1,273 B | +946 B |
+| Plain request cycles | 5,565 | 3,508 | -2,057 |
+| Filtered request cycles | 6,553 | 4,027 | -2,526 |
+| Plain request instructions | 1,645 | 1,044 | -601 |
+| Filtered request instructions | 1,936 | 1,189 | -747 |
+
+Cycle counts cover the function call and the same mock's request validation and
+canned reply, not a physical SIO exchange. Instruction counts are the number
+of trace lines between the same markers in soft65c02's verbose output. This
+fixture compiles both implementations with the same cc65 optimisation flags.
+It checks independently specified wire bytes, status/error mapping, untouched
+output on failures, 255/256-byte filter limits, a 300-byte URI, exact buffer
+boundaries, a 300-byte reply and guard bytes. It runs under `make check`.
+
+Before/after maps and verbose traces from this run are in the ignored
+`build/list-pages-optimization/` directory. They survive normal incremental
+builds but not `make clean`. To rerun the two profiles:
+
+```sh
+soft65c02_unit -v -b build/tests/list-pages-c-profile -i tests/atari_list_pages_reference_soft65c02.yaml
+soft65c02_unit -v -b build/tests/list-pages-atari-profile -i tests/atari_list_pages_soft65c02.yaml
+```
+
+For each of the first two cases, subtract the displayed start cycle count from
+the end count. Changes in code layout can slightly affect cycle totals.

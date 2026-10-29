@@ -1,0 +1,17 @@
+name: Atari ListPages independent wire vectors and cycle profile
+configs:
+  - ../../cc65-clib/tests/harness/harness.yaml
+config_file: atari_list_pages_soft65c02.cfg
+c_flags:
+  - -Osir
+  - -O
+src_files:
+  - atari_list_pages_soft65c02.c
+  - atari_list_pages_profile.s
+  - ../src/platform/atari/fn_file_list_pages.s
+include_paths:
+  - ../include
+ld_flags:
+  - -t
+  - none
+test_script: atari_list_pages_soft65c02.txt
