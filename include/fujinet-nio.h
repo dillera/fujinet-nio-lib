@@ -478,6 +478,7 @@ typedef struct {
     uint16_t max_payload;    /**< byte budget for the pages (reply minus 12) */
     uint8_t flags;           /**< FN_LIST_* */
     uint8_t max_name;        /**< cap on each returned name; 0 = the device's limit (220) */
+    const char *filter;      /**< optional case-insensitive glob; NULL or "" means no filter */
 } fn_list_pages_req_t;
 
 /**

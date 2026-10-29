@@ -41,13 +41,14 @@ int main(void)
         9,                      /* pageSize */
         0xE0, 0x01,             /* maxPayloadBytes 480 */
         FN_LIST_SORT | FN_LIST_DIRS_FIRST,
-        31                      /* maxNameBytes */
+        31,                     /* maxNameBytes */
+        5, 'm', 'i', 'n', 'e', 'r' /* optional filter */
     };
     uint8_t buf[128];
     fn_file_io_t io = { buf, sizeof(buf) };
     fn_list_pages_t out;
-    fn_list_pages_req_t rq = { 5, 9, 480, FN_LIST_SORT | FN_LIST_DIRS_FIRST, 31 };
-    fn_list_pages_req_t plain = { 0, 9, 480, 0, 0 };
+    fn_list_pages_req_t rq = { 5, 9, 480, FN_LIST_SORT | FN_LIST_DIRS_FIRST, 31, "miner" };
+    fn_list_pages_req_t plain = { 0, 9, 480, 0, 0, 0 };
     uint8_t r;
 
     /* a reply with one page of one entry "x": 0 dir flags, size 7, mtime 9 */
@@ -75,6 +76,10 @@ int main(void)
     CHECK(out.pages == buf + 12 && out.pages_len == 14);
     CHECK(out.pages[0] == 1 && out.pages[3] == 0 && out.pages[5] == 'x');
 
+    CHECK(fn_file_list_pages(&io, "a:/", &plain, &out) == FN_OK);
+    CHECK(last_request_len == sizeof(expect_request) - 6);
+    CHECK(last_request[last_request_len - 1] == 0);
+
     /* device errors map to library errors */
     reply_status = 6;
     CHECK(fn_file_list_pages(&io, "a:/", &plain, &out) == FN_ERR_TIMEOUT);
@@ -88,11 +93,13 @@ int main(void)
     /* bad arguments are refused without a call */
     CHECK(fn_file_list_pages(&io, "", &plain, &out) == FN_ERR_INVALID);
     {
-        fn_list_pages_req_t none = { 0, 0, 480, 0, 0 };
+        fn_list_pages_req_t none = { 0, 0, 480, 0, 0, 0 };
         fn_file_io_t tiny = { buf, 8 };
 
         CHECK(fn_file_list_pages(&io, "a:/", &none, &out) == FN_ERR_INVALID);
         CHECK(fn_file_list_pages(&tiny, "a:/", &plain, &out) == FN_ERR_INVALID);
+        tiny.capacity = 15; /* fixed request fits, filter does not */
+        CHECK(fn_file_list_pages(&tiny, "a:/", &rq, &out) == FN_ERR_INVALID);
     }
     puts("list pages wire test passed");
     return 0;

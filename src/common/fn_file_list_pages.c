@@ -32,11 +32,17 @@ uint8_t fn_file_list_pages(fn_file_io_t *io,
     uint8_t *buf;
     uint16_t uri_len;
     uint16_t off;
+    uint8_t filter_len;
     uint8_t result;
 
     uri_len = (uint16_t)strlen(uri);
-    if (uri_len == 0 || req->page_size == 0 ||
-        (uint16_t)(12 + uri_len) > io->capacity) {
+    filter_len = req->filter ? (uint8_t) strlen(req->filter) : 0;
+    if (req->filter && strlen(req->filter) > 255) {
+        return FN_ERR_INVALID;
+    }
+    off = (uint16_t)(12 + (filter_len ? filter_len + 1 : 0));
+    if (uri_len == 0 || req->page_size == 0 || io->capacity < off ||
+        uri_len > (uint16_t)(io->capacity - off)) {
         return FN_ERR_INVALID;
     }
     buf = io->buffer;
@@ -54,6 +60,12 @@ uint8_t fn_file_list_pages(fn_file_io_t *io,
     buf[off++] = (uint8_t)(req->max_payload >> 8);
     buf[off++] = req->flags;
     buf[off++] = req->max_name;
+    /* Optional trailing field: older firmware accepts the fixed v1 prefix. */
+    if (filter_len) {
+        buf[off++] = filter_len;
+        memcpy(buf + off, req->filter, filter_len);
+        off = (uint16_t)(off + filter_len);
+    }
 
     result = fn_raw_call(FN_DEVICE_FILE, FN_CMD_FILE_LIST_PAGES, buf, off,
                          buf, io->capacity, &raw);
