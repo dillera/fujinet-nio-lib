@@ -386,8 +386,41 @@ static void test_none_is_plain_open(void)
     check_session_recorded(0);
 }
 
+static void test_headers(void)
+{
+    static const fn_http_header_t h[] = {{"Authorization", "Bearer abc"}, {"Content-Type", "application/json"}};
+    static const uint8_t expected[] = {
+        1, 2, 2, 1, 0, 'u', 2, 0,
+        13, 0, 'A','u','t','h','o','r','i','z','a','t','i','o','n',
+        10, 0, 'B','e','a','r','e','r',' ','a','b','c',
+        12, 0, 'C','o','n','t','e','n','t','-','T','y','p','e',
+        16, 0, 'a','p','p','l','i','c','a','t','i','o','n','/','j','s','o','n',
+        0x78, 0x56, 0x34, 0x12, 0, 0
+    };
+    fn_handle_t handle;
+    char large[FN_MAX_PACKET_SIZE + 1];
+    fn_http_header_t oversized = {"X-Test", large};
+    reset();
+    CHECK(fn_open_headers(&handle, FN_METHOD_POST, "u", FN_OPEN_FOLLOW_REDIR,
+                          h, 2, 0x12345678UL) == FN_OK);
+    CHECK(sent_len == FN_HEADER_SIZE + sizeof expected);
+    CHECK(memcmp(sent + FN_HEADER_SIZE, expected, sizeof expected) == 0);
+    CHECK(sent[FN_CHECKSUM_OFFSET] == fn_calc_packet_checksum(sent, sent_len));
+    CHECK(handle == TEST_HANDLE);
+    reset();
+    CHECK(fn_open_headers(&handle, FN_METHOD_GET, "u", 0, NULL, 1, 0) == FN_ERR_INVALID);
+    CHECK(fn_open_headers(&handle, FN_METHOD_GET, "u", 0, h, 2, 1) == FN_ERR_INVALID);
+    memset(large, 'x', sizeof large - 1);
+    large[sizeof large - 1] = 0;
+    CHECK(fn_open_headers(&handle, FN_METHOD_GET, "u", 0, &oversized, 1, 0) == FN_ERR_INVALID);
+    CHECK(fn_open_headers(&handle, FN_METHOD_GET, "u", 0, NULL, 0, 0) == FN_OK);
+    CHECK(sent_len == FN_HEADER_SIZE + 14);
+    CHECK(exchange_calls == 1);
+}
+
 int main(void)
 {
+    test_headers();
     test_fn_open();
     test_tcp_open();
     test_flag_mapping();

@@ -749,6 +749,18 @@ uint8_t fn_open(fn_handle_t *handle,
                 const char *url,
                 uint8_t flags);
 
+typedef struct {
+    const char *name;
+    const char *value;
+} fn_http_header_t;
+
+/* Open with HTTP request headers and a known POST/PUT body length. Headers
+ * and strings belong to the caller and need only remain valid for this call.
+ * On BBC's ROM-backed transport this returns FN_ERR_UNSUPPORTED. */
+uint8_t fn_open_headers(fn_handle_t *handle, uint8_t method, const char *url,
+                        uint8_t flags, const fn_http_header_t *headers,
+                        uint16_t header_count, uint32_t body_len);
+
 /**
  * @brief Open a network session using an explicit long-URL path.
  *
@@ -874,6 +886,10 @@ uint8_t fn_write(fn_handle_t handle,
  * For TCP: receives data from the socket.
  * 
  * Continue reading until FN_READ_EOF flag is set or bytes_read is 0.
+ * On non-cc65 targets, requests larger than one packet are split into bounded
+ * exchanges. A short read or temporary not-ready after progress returns the
+ * bytes already received; the caller should continue from the new offset.
+ * On cc65, each call returns at most one packet's worth of data.
  * 
  * @param handle      Session handle
  * @param offset      Byte offset (must be sequential for TCP)

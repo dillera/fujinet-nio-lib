@@ -98,6 +98,32 @@ int main(void) {
 }
 ```
 
+### HTTP request headers and larger reads
+
+`fn_open_headers` supplies caller-owned name/value pairs and a known request
+body length. For example, after `fn_init()`:
+
+```c
+fn_http_header_t headers[] = {
+    {"Authorization", "Bearer example-token"},
+    {"Content-Type", "application/json"}
+};
+fn_handle_t handle;
+uint8_t rc = fn_open_headers(&handle, FN_METHOD_POST, "https://example.com/api",
+                             FN_OPEN_FOLLOW_REDIR, headers, 2, body_length);
+/* On FN_OK, send exactly body_length bytes with fn_write(), then read. */
+```
+
+The same API works for HTTP and HTTPS. Arbitrary headers and known body lengths
+are not supported by BBC's ROM-backed transport, which returns
+`FN_ERR_UNSUPPORTED`. Header strings must fit the target's request packet.
+
+On Amiga and other non-cc65 targets, `fn_read` accepts buffers larger than a
+packet, splitting requests as needed. It may return a short read; continue at
+the returned offset, and retry `FN_ERR_NOT_READY` as appropriate. The largest
+single response remains limited by the transport (1024 bytes on Amiga). On
+cc65, each `fn_read` returns at most one packet of data.
+
 ### TCP/TLS Connection
 
 ```c

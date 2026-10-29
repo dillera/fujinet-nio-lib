@@ -28,6 +28,10 @@ uint8_t fn_parse_read_response(void)
     _fn_parse_ctx.handle = FN_READ_LE16(response, _fn_parse_ctx.data_offset + 4);
     _fn_parse_ctx.offset_echo = FN_READ_LE32(response, _fn_parse_ctx.data_offset + 6);
     actual_data_len = FN_READ_LE16(response, _fn_parse_ctx.data_offset + 10);
+    if (actual_data_len > (uint16_t)(_fn_parse_ctx.data_len - 12) ||
+        actual_data_len > _fn_parse_ctx.data_max) {
+        return FN_ERR_INVALID;
+    }
 
     copy_len = actual_data_len;
     if (copy_len > _fn_parse_ctx.data_max) {

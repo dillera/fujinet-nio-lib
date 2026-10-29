@@ -153,6 +153,9 @@ test-ready-wire:
 	@echo "Running fn_ready / fn_read_available wire test..."
 	bash ./tests/run_ready_wire_test.sh
 
+test-large-read:
+	bash ./tests/run_large_read_wire_test.sh
+
 test-library-link: linux
 	@echo "Running public API library-link test..."
 	bash ./tests/run_library_link_test.sh
@@ -188,7 +191,7 @@ test-all-build:
 	@echo "Building all configured library targets..."
 	$(MAKE) all
 
-test: test-library-link test-legacy test-mount-resolve test-appstore-read test-list-pages test-atari-list-pages test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-ready-wire test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry
+test: test-library-link test-legacy test-mount-resolve test-appstore-read test-list-pages test-atari-list-pages test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-ready-wire test-large-read test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry
 
 # Fast required change check: compile every configured target, then run the
 # host-side tests and public archive-link test. Keep this as a recipe rather
