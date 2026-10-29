@@ -428,6 +428,68 @@ typedef struct {
     uint16_t capacity;       /**< Bytes available at buffer */
 } fn_service_io_t;
 
+/* ---- FileService: paged directory listing ----------------------------------
+ *
+ * fn_file_list_pages() asks the device for whole pages of a directory.  The
+ * device lists and sorts the directory once, remembers it, and returns as many
+ * complete pages as fit `max_payload` bytes, together with the total entry
+ * count, so a small client can show "page n of m" and fetch only what it shows.
+ * If not even the first page fits, page_count is 0 and FN_LIST_PAGES_MORE is
+ * set: ask again with a smaller page_size.
+ *
+ * After the call `out->pages` points into the caller's buffer at page_count
+ * pages, `out->pages_len` bytes in all.  Each page is
+ *     u8  entry_count   (== page_size, except the directory's last page)
+ *     u16 data_len      (LE; bytes of entries that follow)
+ *     entries           entry_count times:
+ *         u8  flags     FN_LIST_ENTRY_DIR, FN_LIST_ENTRY_NAME_CUT
+ *         u8  name_len
+ *         name_len bytes of basename (not NUL terminated)
+ *         u32 size      (LE; bytes, saturating; 0 for a directory)
+ *         u32 mtime     (LE; Unix seconds, 0 if unknown)
+ */
+#define FN_LIST_SORT        0x01  /* sort by basename, ASCII case-insensitive */
+#define FN_LIST_DIRS_FIRST  0x02  /* with FN_LIST_SORT: directories before files */
+#define FN_LIST_REFRESH     0x04  /* re-read the directory, replacing any cached copy */
+#define FN_LIST_TOTAL_ONLY  0x08  /* return the total and no pages */
+
+#define FN_LIST_PAGES_MORE      0x01  /* pages exist after those returned */
+#define FN_LIST_PAGES_NAME_CUT  0x02  /* some name was cut to max_name */
+
+#define FN_LIST_ENTRY_DIR       0x01
+#define FN_LIST_ENTRY_NAME_CUT  0x80
+
+typedef struct {
+    uint8_t flags;           /**< FN_LIST_PAGES_* */
+    uint32_t total;          /**< entries in the whole directory */
+    uint16_t start_page;     /**< echoed */
+    uint8_t page_size;       /**< echoed */
+    uint8_t page_count;      /**< whole pages returned */
+    const uint8_t *pages;    /**< page_count pages, inside the caller's buffer */
+    uint16_t pages_len;      /**< their total length in bytes */
+} fn_list_pages_t;
+
+typedef fn_service_io_t fn_file_io_t;
+
+/** What fn_file_list_pages asks for. */
+typedef struct {
+    uint16_t start_page;     /**< first page wanted, 0-based */
+    uint8_t page_size;       /**< entries per page, 1..64 */
+    uint16_t max_payload;    /**< byte budget for the pages (reply minus 12) */
+    uint8_t flags;           /**< FN_LIST_* */
+    uint8_t max_name;        /**< cap on each returned name; 0 = the device's limit (220) */
+} fn_list_pages_req_t;
+
+/**
+ * Fetch pages req->start_page.. of the directory `uri`.  The request is built
+ * in, and the reply lands in, io->buffer, which must hold the request (about
+ * 12 + strlen(uri) bytes) and the reply (req->max_payload + 12 bytes).
+ */
+uint8_t fn_file_list_pages(fn_file_io_t *io,
+                           const char *uri,
+                           const fn_list_pages_req_t *req,
+                           fn_list_pages_t *out);
+
 typedef fn_service_io_t fn_appstore_io_t;
 typedef fn_service_io_t fn_slot_catalog_io_t;
 

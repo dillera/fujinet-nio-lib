@@ -147,6 +147,9 @@ extern "C" {
 /** Create a directory at a filesystem URI */
 #define FN_CMD_FILE_MKDIR      0x06
 
+/** List a directory a page at a time (whole pages, with the total) */
+#define FN_CMD_FILE_LIST_PAGES 0x07
+
 /* AppStore service commands */
 #define FN_CMD_APPSTORE_STAT   0x01
 

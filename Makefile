@@ -21,7 +21,7 @@ override PROGRAM := fujinet-nio
 
 # Phony targets
 .PHONY: all clean help disk-bbc disk-bbc-clib test-legacy test-mount-resolve \
-	test-appstore-read test-slot-catalog test-bbc test-bbc-scripted \
+	test-appstore-read test-list-pages test-slot-catalog test-bbc test-bbc-scripted \
 	test-bbc-real test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-ready-wire test-library-link \
 	test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry test \
 	test-all-build check msdos $(TARGETS) $(EXTRA_TARGETS)
@@ -109,6 +109,10 @@ test-appstore-read:
 	@echo "Running app-store read wire tests..."
 	bash ./tests/run_appstore_read_wire_test.sh
 
+test-list-pages:
+	@echo "Running paged directory listing wire tests..."
+	bash ./tests/run_list_pages_wire_test.sh
+
 test-slot-catalog:
 	@echo "Running slot catalogue wire tests..."
 	bash ./tests/run_slot_catalog_wire_test.sh
@@ -180,7 +184,7 @@ test-all-build:
 	@echo "Building all configured library targets..."
 	$(MAKE) all
 
-test: test-library-link test-legacy test-mount-resolve test-appstore-read test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-ready-wire test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry
+test: test-library-link test-legacy test-mount-resolve test-appstore-read test-list-pages test-list-pages test-slot-catalog test-fuji test-wifi test-disk test-disk-context test-session test-open-ext test-open-wire test-ready-wire test-amiga-transport test-atari-transport test-atari-hsio test-atari-proc test-atari-read-profile test-atari-compact test-raw-transport-retry
 
 # Fast required change check: compile every configured target, then run the
 # host-side tests and public archive-link test. Keep this as a recipe rather
