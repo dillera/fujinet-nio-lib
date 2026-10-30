@@ -14,6 +14,7 @@ static uint16_t last_payload_len;
 static unsigned call_count;
 static uint8_t adapter_status;
 static uint8_t adapter_short_reply;
+static uint8_t join_status, join_short_reply, join_value = FN_WIFI_JOIN_FAILED;
 
 static void put_string(uint8_t *out, uint16_t *at, const char *value)
 {
@@ -51,6 +52,23 @@ uint8_t fn_raw_call(uint8_t device,
     memcpy(last_payload, payload, payload_length);
     response->status = FN_OK;
     response->payload_length = 0;
+
+    if (command == FN_WIFI_CMD_TRY_JOIN) {
+        response->status = join_status;
+        if (!join_status && !join_short_reply) {
+            out[0] = 1;
+            response->payload_length = 1;
+        }
+        return FN_OK;
+    }
+    if (command == FN_WIFI_CMD_GET_JOIN_STATUS) {
+        response->status = join_status;
+        if (join_status) return FN_OK;
+        if (reply_capacity < 2) return FN_ERR_INVALID;
+        out[0] = 1; out[1] = join_value;
+        response->payload_length = join_short_reply ? 1 : 2;
+        return FN_OK;
+    }
 
     if (command == FN_WIFI_CMD_SET_CONFIG) {
         if (payload_length < 2 || last_payload[0] != FN_WIFI_PROTOCOL_VERSION)
@@ -230,8 +248,41 @@ static int test_adapter_info(void)
     return 0;
 }
 
+static int test_trial(void)
+{
+    static const uint8_t expected[] = {1, 4, 'C', 'a', 'f', 'e', 6, 's', 'e', 'c', 'r', 'e', 't'};
+    uint8_t state = 99;
+    reset_call();
+    if (fn_wifi_try_join("Cafe", "secret") != FN_OK ||
+        last_command != FN_WIFI_CMD_TRY_JOIN || last_payload_len != sizeof(expected) ||
+        memcmp(last_payload, expected, sizeof(expected))) return 1;
+    if (fn_wifi_try_join("", "") != FN_ERR_INVALID ||
+        fn_wifi_try_join(0, "") != FN_ERR_INVALID ||
+        fn_wifi_try_join("Cafe", 0) != FN_ERR_INVALID) return 1;
+    reset_call();
+    if (fn_wifi_get_join_status(&state) != FN_OK || state != FN_WIFI_JOIN_FAILED ||
+        last_command != FN_WIFI_CMD_GET_JOIN_STATUS || last_payload_len != 1 || last_payload[0] != 1)
+        return 1;
+    if (fn_wifi_get_join_status(0) != FN_ERR_INVALID) return 1;
+    join_short_reply = 1;
+    if (fn_wifi_get_join_status(&state) != FN_ERR_IO ||
+        fn_wifi_try_join("Cafe", "secret") != FN_ERR_IO) return 1;
+    join_short_reply = 0;
+    join_value = 4;
+    if (fn_wifi_get_join_status(&state) != FN_ERR_IO) return 1;
+    join_value = FN_WIFI_JOIN_FAILED;
+    join_status = 8;
+    if (fn_wifi_try_join("Cafe", "secret") != FN_ERR_UNSUPPORTED ||
+        fn_wifi_get_join_status(&state) != FN_ERR_UNSUPPORTED) return 1;
+    join_status = 3;
+    if (fn_wifi_try_join("Cafe", "secret") != FN_ERR_BUSY) return 1;
+    join_status = 0;
+    return 0;
+}
+
 int main(void)
 {
+    if (test_trial()) { puts("wifi trial wire test failed"); return 1; }
     if (test_status()) { puts("wifi status wire test failed"); return 1; }
     if (test_config_and_set()) { puts("wifi config wire test failed"); return 1; }
     if (test_scan_and_boundaries()) { puts("wifi scan wire test failed"); return 1; }

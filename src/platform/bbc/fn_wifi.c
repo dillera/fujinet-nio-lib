@@ -8,6 +8,7 @@ static uint8_t wifi_status(uint8_t s)
 {
     if (s == 0) return FN_OK;
     if (s == 2) return FN_ERR_INVALID;
+    if (s == 3) return FN_ERR_BUSY;
     if (s == 4) return FN_ERR_NOT_READY;
     if (s == 8) return FN_ERR_UNSUPPORTED;
     return FN_ERR_IO;
@@ -127,4 +128,39 @@ uint8_t fn_wifi_scan(uint16_t offset, uint8_t limit, fn_wifi_scan_record_t *r,
         r[i].rssi = (int8_t)reply[at++]; r[i].channel = reply[at++]; r[i].auth = reply[at++];
     }
     *count = n; return at == len ? FN_OK : FN_ERR_IO;
+}
+
+uint8_t fn_wifi_try_join(const char *ssid, const char *password)
+{
+    uint8_t request[3 + FN_WIFI_MAX_SSID + FN_WIFI_MAX_PASSWORD];
+    uint16_t ssid_len, password_len, at, reply_len = 0;
+    uint8_t result;
+    if (!ssid || !password) return FN_ERR_INVALID;
+    ssid_len = (uint16_t) strlen(ssid);
+    password_len = (uint16_t) strlen(password);
+    if (!ssid_len || ssid_len > FN_WIFI_MAX_SSID || password_len > FN_WIFI_MAX_PASSWORD)
+        return FN_ERR_INVALID;
+    request[0] = FN_WIFI_PROTOCOL_VERSION;
+    request[1] = (uint8_t) ssid_len;
+    memcpy(request + 2, ssid, ssid_len);
+    at = (uint16_t) (2 + ssid_len);
+    request[at++] = (uint8_t) password_len;
+    memcpy(request + at, password, password_len);
+    at = (uint16_t) (at + password_len);
+    result = wifi_call(FN_WIFI_CMD_TRY_JOIN, request, at, request, sizeof(request), &reply_len);
+    if (result != FN_OK) return result;
+    return reply_len && request[0] == FN_WIFI_PROTOCOL_VERSION ? FN_OK : FN_ERR_IO;
+}
+
+uint8_t fn_wifi_get_join_status(uint8_t *state)
+{
+    uint8_t request[] = { FN_WIFI_PROTOCOL_VERSION }, response[16], result;
+    uint16_t len = 0;
+    if (!state) return FN_ERR_INVALID;
+    result = wifi_call(FN_WIFI_CMD_GET_JOIN_STATUS, request, 1, response, sizeof(response), &len);
+    if (result != FN_OK) return result;
+    if (len < 2 || response[0] != FN_WIFI_PROTOCOL_VERSION || response[1] > FN_WIFI_JOIN_FAILED)
+        return FN_ERR_IO;
+    *state = response[1];
+    return FN_OK;
 }

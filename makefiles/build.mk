@@ -119,7 +119,7 @@ COMMON_SRCS_DEFAULT := $(SRCDIR)/common/fn_slip.c \
                        $(SRCDIR)/common/fn_disk_write_sector.c \
                        $(SRCDIR)/common/fn_disk_context.c \
                        $(SRCDIR)/common/fn_raw.c
-COMMON_SRCS_DEFAULT += $(SRCDIR)/common/fn_wifi.c $(SRCDIR)/common/fn_wifi_adapter.c \
+COMMON_SRCS_DEFAULT += $(SRCDIR)/common/fn_wifi.c $(SRCDIR)/common/fn_wifi_set.c $(SRCDIR)/common/fn_wifi_adapter.c \
                        $(SRCDIR)/common/fn_fuji_info.c
 
 LEGACY_SRCS_DEFAULT := $(SRCDIR)/legacy/fn_legacy_appkey_state.c \

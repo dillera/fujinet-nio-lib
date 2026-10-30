@@ -93,6 +93,8 @@ extern "C" {
 #define FN_WIFI_CMD_SET_CONFIG   0x03
 #define FN_WIFI_CMD_SCAN         0x04
 #define FN_WIFI_CMD_GET_ADAPTER_INFO 0x05
+#define FN_WIFI_CMD_TRY_JOIN 0x06
+#define FN_WIFI_CMD_GET_JOIN_STATUS 0x07
 
 /* ============================================================================
  * FujiDevice Commands

@@ -220,6 +220,15 @@ typedef struct {
     fn_wifi_bssid_t mac;    /* station interface MAC; mac.valid=0 when unknown */
 } fn_wifi_adapter_info_t;
 
+#define FN_WIFI_JOIN_IDLE       0
+#define FN_WIFI_JOIN_PENDING    1
+#define FN_WIFI_JOIN_CONNECTED  2
+#define FN_WIFI_JOIN_FAILED     3
+/* A trial retains the previous credentials until the new link is connected.
+ * On failure the firmware attempts to restore the previous network. */
+uint8_t fn_wifi_try_join(const char *ssid, const char *password);
+uint8_t fn_wifi_get_join_status(uint8_t *state);
+
 /* Password input is consumed during the call and is never returned. */
 uint8_t fn_wifi_get_status(fn_wifi_status_t *status);
 uint8_t fn_wifi_get_config(fn_wifi_config_t *config);
