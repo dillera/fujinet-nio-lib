@@ -14,7 +14,7 @@
 # Supported targets
 # TARGETS = atari apple2 apple2enh bbc c64 coco msdos linux
 TARGETS = atari bbc bbc-clib msdos-serial msdos-ioctl msdos-f5 linux amiga
-EXTRA_TARGETS = amiga-driver palmos-serial palmos-springboard
+EXTRA_TARGETS = amiga-driver palmos-serial palmos-springboard mac68k
 
 # Output library name
 override PROGRAM := fujinet-nio
