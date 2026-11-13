@@ -293,6 +293,7 @@ class CompiledM68KTests(unittest.TestCase):
         if 'nl_usb_open' in m.symbols: version = (8, 1, 3, 6)
         if 'NioLibNetJsonQuery' in m.symbols: version = (8, 1, 4, 7)
         if 'NioLibResetTransport' in m.symbols: version = (8, 1, 5, 8)
+        if 'NioLibRawExchange' in m.symbols: version = (8, 1, 6, 9)
         self.assertEqual(struct.unpack('>4H', m.uc.mem_read(0x8000, 8)), version)
         self.assertEqual(m.globals, 0)
         self.assertFalse(m.allocations)
@@ -304,6 +305,8 @@ class CompiledM68KTests(unittest.TestCase):
         if 'nl_usb_open' in m.symbols: caps = 0x8000003f
         if 'NioLibNetJsonQuery' in m.symbols: caps = 0x8000007f
         if 'NioLibResetTransport' in m.symbols: caps = 0x800000ff
+        if 'NioLibRawExchange' in m.symbols: caps = 0x800003ff
+        if 'nl_usb_none' in m.symbols: caps &= ~0x20          # built without the Handspring SDK
         self.assertEqual(m.read32(0x8000), caps)
 
     def test_rejected_resource_leaves_no_allocations_or_locks(self):

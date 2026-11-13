@@ -4,7 +4,7 @@
  * implementation or physical I/O is linked into this archive. */
 static UInt16 client_ref, client_open, client_loaded, client_active, capacity;
 static UInt32 client_token;
-static UInt16 client_status_api, client_json_api;
+static UInt16 client_status_api, client_json_api, client_raw_api;
 static UInt16 palm_error, nio_result;
 static NioLibCleanup cleanup_report;
 
@@ -59,6 +59,7 @@ static uint8_t load_library(void)
     }
     client_status_api = version.abiMinor >= 2 && (caps & nioLibCapTransports);
     client_json_api = version.abiMinor >= 4 && (caps & nioLibCapJSONQuery);
+    client_raw_api = version.abiMinor >= 6 && (caps & nioLibCapRaw);
     err = NioLibOpen(client_ref);
     if (err) { palm_error = err; release_library(); return FN_ERR_IO; }
     client_open = 1;
@@ -223,6 +224,22 @@ UInt16 NioLibClientLastError(void) { return palm_error; }
 UInt16 NioLibClientLastResult(void) { return nio_result; }
 UInt16 NioLibClientCapacity(void) { return capacity; }
 void NioLibClientCleanupReport(NioLibCleanup *p) { if (p) *p = cleanup_report; }
+
+/* ABI 1.6: a raw packet through the library (client_raw.c makes it the common code's transport, for fn_raw_call
+ * and the calls built on it: Fuji info, WiFi status). */
+uint8_t nl_client_raw(const uint8_t *request, uint16_t length, uint8_t *response, uint16_t capacity,
+                      uint16_t *got)
+{
+    UInt16 n = 0;
+    uint8_t result;
+    if (got) *got = 0;
+    if (!client_active) return FN_ERR_NOT_READY;
+    if (!client_raw_api) return FN_ERR_UNSUPPORTED;
+    result = translate(NioLibRawExchange(client_ref, client_token, request, length, response, capacity,
+                                         &n, &nio_result));
+    if (got) *got = n;
+    return result;
+}
 
 uint8_t fn_json_query(fn_handle_t handle, const char *selector)
 {

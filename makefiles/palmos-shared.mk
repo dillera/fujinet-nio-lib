@@ -20,6 +20,17 @@ CORE = fn_state fn_init fn_shutdown fn_open fn_open_exchange fn_open_translated 
        fn_rw fn_info_close fn_ready fn_clock_common fn_clock_get \
        fn_clock_time_common fn_clock_get_timezone fn_session fn_slip
 COREOBJS = $(addprefix $(B)/core/,$(addsuffix .o,$(CORE)))
+# The Network transport: the NIO device itself, running in the library over NetLib (netlib/).
+NETLIB = nio_core nio_net nio_fuji nio_sock_palm
+NETLIBOBJS = $(addprefix $(B)/netlib/,$(addsuffix .o,$(NETLIB))) $(B)/netlib.o
+# USB needs the Handspring SDK's UsbMgr.h; without it the library is built with no USB backend (usb_none.c).
+ifeq ($(wildcard $(HANDSPRING_INCLUDE)/UsbMgr.h),)
+USBOBJ = $(B)/usb_none.o
+USBFLAGS = -DNL_NO_USB
+else
+USBOBJ = $(B)/usb.o
+USBFLAGS =
+endif
 BACKEND = fn_palmos_open fn_palmos_close fn_palmos_state
 BACKOBJS = $(addprefix $(B)/backend/,$(addsuffix .o,$(BACKEND))) $(B)/backend/fn_palmos_exchange.o $(B)/backend/transport_cs1.o
 
@@ -31,12 +42,12 @@ all: verify
 $(B)/settings: FORCE | $(B)
 	@printf '%s\n' '$(CC) $(LIBFLAGS) $(HANDSPRING_INCLUDE)' > $@.tmp
 	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
-$(B)/entry.o $(B)/library.o $(B)/image.o $(B)/services.o $(B)/json.o $(B)/cs1.o $(B)/transport.o $(B)/serial.o $(B)/usb.o $(B)/test.o $(B)/registers.o $(B)/client.o $(COREOBJS) $(BACKOBJS): $(B)/settings $(wildcard include/palmos/*.h)
+$(B)/entry.o $(B)/library.o $(B)/image.o $(B)/services.o $(B)/json.o $(B)/cs1.o $(B)/transport.o $(B)/serial.o $(USBOBJ) $(B)/test.o $(B)/registers.o $(B)/client.o $(B)/client_raw.o $(COREOBJS) $(BACKOBJS) $(NETLIBOBJS): $(B)/settings $(wildcard include/palmos/*.h)
 
 $(B):
 	mkdir -p $@
 $(B)/library.o: $(S)/library.c include/palmos/NioLib.h $(S)/image.h $(S)/private.h | $(B)
-	$(CC) $(LIBFLAGS) -c $< -o $@
+	$(CC) $(LIBFLAGS) $(USBFLAGS) -c $< -o $@
 $(B)/image.o: $(S)/image.c $(S)/image.h | $(B)
 	$(CC) $(LIBFLAGS) -c $< -o $@
 $(B)/entry.o: $(S)/entry.S | $(B)
@@ -54,6 +65,13 @@ $(B)/usb.o: $(S)/usb.c $(S)/private.h include/palmos/NioLib.h | $(B)
 	$(CC) $(LIBFLAGS) -I"$(HANDSPRING_INCLUDE)" -c $< -o $@
 $(B)/serial.o: $(S)/serial.c $(S)/private.h include/palmos/NioLib.h | $(B)
 	$(CC) $(LIBFLAGS) -c $< -o $@
+$(B)/usb_none.o: $(S)/usb_none.c $(S)/private.h include/palmos/NioLib.h | $(B)
+	$(CC) $(LIBFLAGS) -c $< -o $@
+$(B)/netlib.o: $(S)/netlib.c $(S)/private.h $(wildcard $(S)/netlib/*.h) include/palmos/NioLib.h | $(B)
+	$(CC) $(LIBFLAGS) -c $< -o $@
+$(B)/netlib/%.o: $(S)/netlib/%.c $(wildcard $(S)/netlib/*.h) | $(B)
+	mkdir -p $(B)/netlib
+	$(CC) $(LIBFLAGS) -c $< -o $@
 $(B)/backend/transport_cs1.o: src/platform/palmos/fn_transport.c | $(B)
 	mkdir -p $(B)/backend
 	$(CC) $(LIBFLAGS) -DFN_PALMOS_SHARED -Dfn_transport_init=nl_cs1_init -Dfn_transport_close=nl_cs1_close -Dfn_transport_ready=nl_cs1_ready -Dfn_transport_exchange_buffers=nl_cs1_exchange_buffers -Dfn_transport_exchange=nl_cs1_exchange -c $< -o $@
@@ -66,7 +84,7 @@ $(B)/backend/fn_palmos_exchange.o: src/platform/palmos/fn_palmos_exchange.c src/
 $(B)/backend/%.o: src/platform/palmos/%.c src/platform/palmos/fn_palmos_internal.h $(S)/private.h | $(B)
 	mkdir -p $(B)/backend
 	$(CC) $(LIBFLAGS) -DFN_PALMOS_SHARED -c $< -o $@
-$(B)/NioLib: $(B)/entry.o $(B)/library.o $(B)/image.o $(B)/services.o $(B)/json.o $(B)/cs1.o $(B)/transport.o $(B)/serial.o $(B)/usb.o $(COREOBJS) $(BACKOBJS)
+$(B)/NioLib: $(B)/entry.o $(B)/library.o $(B)/image.o $(B)/services.o $(B)/json.o $(B)/cs1.o $(B)/transport.o $(B)/serial.o $(USBOBJ) $(COREOBJS) $(BACKOBJS) $(NETLIBOBJS)
 	$(CC) $(LIBFLAGS) -nostartfiles -Wl,-q,-Map,$@.map -o $@ $^
 $(B)/nDat0000.bin: $(B)/NioLib scripts/palmos_shared_image.py
 	$(PYTHON) scripts/palmos_shared_image.py image $(B)
@@ -81,7 +99,18 @@ $(B)/registers.o: $(T)/registers.S | $(B)
 	$(CC) $(PALMFLAGS) -c $< -o $@
 $(B)/client.o: $(S)/client.c include/palmos/NioLib.h include/palmos/NioLibClient.h | $(B)
 	$(CC) $(PALMFLAGS) -Iinclude -c $< -o $@
-$(B)/libniolib-client.a: $(B)/client.o
+$(B)/client_raw.o: $(S)/client_raw.c include/palmos/NioLib.h include/palmos/NioLibClient.h | $(B)
+	$(CC) $(PALMFLAGS) -Iinclude -c $< -o $@
+# Common code an app links beside the client (fn_tcp_open, fn_error_string, and, through the raw exchange,
+# fn_raw_call, Fuji info, WiFi status): app code with app globals, never the library's.
+CLIENTCOMMON = fn_tcp_open fn_util fn_raw fn_fuji_info fn_wifi fn_wifi_adapter fn_state fn_packet_header \
+               fn_packet_checksum fn_packet_checksum_packet fn_checksum_fold fn_packet_parse_common
+CLIENTCOMMONOBJS = $(addprefix $(B)/clientcore/,$(addsuffix .o,$(CLIENTCOMMON)))
+$(B)/clientcore/%.o: src/common/%.c $(wildcard include/*.h) | $(B)
+	mkdir -p $(B)/clientcore
+	$(CC) $(PALMFLAGS) -Iinclude -c $< -o $@
+$(B)/libniolib-client.a: $(B)/client.o $(B)/client_raw.o $(CLIENTCOMMONOBJS)
+	rm -f $@
 	m68k-palmos-ar rcs $@ $^
 $(B)/NioLibTest: $(B)/test.o $(B)/registers.o $(B)/libniolib-client.a
 	$(CC) $(PALMFLAGS) -Wl,-Map,$@.map -o $@ $^
