@@ -1,4 +1,4 @@
-/* Palm OS system-library ABI 1.5; original 1.0 traps stay unchanged. */
+/* Palm OS system-library ABI 1.6; original 1.0 traps stay unchanged. */
 #ifndef NIO_PALM_LIBRARY_H
 #define NIO_PALM_LIBRARY_H
 #include <PalmOS.h>
@@ -8,7 +8,7 @@
 #define nioTestCreator 'NiT1'
 #define nioLibType 'libr'
 #define nioLibAbiMajor 1
-#define nioLibAbiMinor 5
+#define nioLibAbiMinor 6
 #define nioLibCapA4Globals 0x00000001UL
 #define nioLibCapNetwork   0x00000002UL
 #define nioLibCapClock     0x00000004UL
@@ -17,6 +17,9 @@
 #define nioLibCapUSB 0x00000020UL
 #define nioLibCapJSONQuery 0x00000040UL
 #define nioLibCapRecovery 0x00000080UL
+/* ABI 1.6: the Network transport (an NIO inside NioLib, over NetLib), and raw packets through any transport */
+#define nioLibCapNetLib 0x00000100UL
+#define nioLibCapRaw 0x00000200UL
 #define nioLibCapTestOnly  0x80000000UL
 /* Legacy bit/name retained: it now identifies the foundation diagnostics. */
 #define nioLibCapTestGlobals nioLibCapTestOnly
@@ -47,6 +50,7 @@
 #define nioTransportSpringboard 1
 #define nioTransportSerial 2
 #define nioTransportUSB 3
+#define nioTransportNetwork 4             /* ABI 1.6: no hardware; NIO on the Palm over NetLib */
 #define nioSerialRTSCTS 1
 #define nioConfigVersion 1
 #define nioConfigDefaulted 1
@@ -72,6 +76,18 @@ typedef struct {
 #define nioLibTrapNetJsonQuery (sysLibTrapCustom + 17)
 #define nioLibTrapResetTransport (sysLibTrapCustom + 18)
 #define nioRecoveryPeerReset 1
+/* ABI 1.6 */
+#define nioLibTrapRawExchange (sysLibTrapCustom + 19)
+#define nioLibTrapNetLibStatus (sysLibTrapCustom + 20)
+#define nioLibTrapNetLibHangup (sysLibTrapCustom + 21)
+#define nioNetLibPresent 1                /* the Palm has NetLib */
+#define nioNetLibUp 2                     /* NetLib is open: a link (as far as NetLib knows) */
+#define nioNetLibSession 4                /* a client session is using the Network transport now */
+typedef struct {
+    UInt16 size, flags, sessions, connects, failures, reserved;
+    UInt32 bytesIn, bytesOut;
+    Char ip[16];
+} NioLibNetLibStatus;
 
 typedef struct {
     UInt16 size;
@@ -169,5 +185,15 @@ Err NioLibNetJsonQuery(UInt16 refNum, UInt32 token, UInt16 handle,
  * Confirmation must equal nioRecoveryPeerReset; transport is explicit. */
 Err NioLibResetTransport(UInt16 refNum, UInt16 transport, UInt16 confirmation)
     NIO_LIB_TRAP(nioLibTrapResetTransport);
+/* ABI 1.6: one FujiBus request packet through the owner's selected transport, its reply back (at most 1024 bytes
+ * each way). For devices the library has no call of its own for (Fuji info, WiFi status, files); not for Network
+ * handles, which the library tracks itself. */
+Err NioLibRawExchange(UInt16 refNum, UInt32 token, const UInt8 *request, UInt16 length,
+                      UInt8 *response, UInt16 capacity, UInt16 *gotP, UInt16 *resultP)
+    NIO_LIB_TRAP(nioLibTrapRawExchange);
+/* ABI 1.6: the Network transport's link and counters; needs Open, not a client session. */
+Err NioLibGetNetLibStatus(UInt16 refNum, NioLibNetLibStatus *statusP) NIO_LIB_TRAP(nioLibTrapNetLibStatus);
+/* ABI 1.6: take an idle NetLib link down now (NIO Config's Disconnect); BUSY while a client session runs. */
+Err NioLibNetLibHangup(UInt16 refNum) NIO_LIB_TRAP(nioLibTrapNetLibHangup);
 #undef NIO_LIB_TRAP
 #endif

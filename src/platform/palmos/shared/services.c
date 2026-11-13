@@ -338,7 +338,7 @@ SERVICE(NioLibResetTransport,
     (void)refNum;
     if (confirmation != nioRecoveryPeerReset ||
         (transport != nioTransportSpringboard && transport != nioTransportSerial &&
-         transport != nioTransportUSB)) return nioLibErrParam;
+         transport != nioTransportUSB && transport != nioTransportNetwork)) return nioLibErrParam;
     if (!nl_client_idle() || nl_active()) return nioLibErrBusy;
     if (nl_can_close()) return nioLibErrBusy;
     busy = 1;
@@ -346,4 +346,38 @@ SERVICE(NioLibResetTransport,
     if (!result) uncertain_operation = 0;
     busy = 0;
     return result;
+}
+
+/* ABI 1.6: a raw FujiBus packet through the owner's transport (Fuji info, WiFi status, files). */
+SERVICE(NioLibRawExchange,
+        (UInt16 refNum, UInt32 token, const UInt8 *request, UInt16 length, UInt8 *response,
+         UInt16 capacity, UInt16 *gotP, UInt16 *resultP),
+        (refNum, token, request, length, response, capacity, gotP, resultP))
+{
+    Err err;
+    UInt16 got = 0;
+    (void)refNum;
+    if (!request || !response || !gotP || !resultP) return nioLibErrParam;
+    *gotP = 0;
+    err = enter(token); if (err) return err;
+    *resultP = fn_transport_exchange_buffers(request, length, response, capacity, &got);
+    *gotP = got;
+    leave(); return errNone;
+}
+
+SERVICE(NioLibGetNetLibStatus,
+        (UInt16 refNum, NioLibNetLibStatus *s), (refNum, s))
+{
+    (void)refNum;
+    if (!s || s->size != sizeof(*s)) return nioLibErrParam;
+    if (busy) return nioLibErrBusy;
+    nl_netlib_status(s);
+    return errNone;
+}
+
+SERVICE(NioLibNetLibHangup, (UInt16 refNum), (refNum))
+{
+    (void)refNum;
+    if (!nl_client_idle() || nl_active()) return nioLibErrBusy;
+    return nl_netlib_hangup();
 }

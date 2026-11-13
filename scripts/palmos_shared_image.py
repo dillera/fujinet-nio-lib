@@ -131,6 +131,8 @@ def audit(out, objdump='m68k-palmos-objdump', nm='m68k-palmos-nm'):
         names += ["NioLibNetJsonQuery"]
     if "NioLibResetTransport" in sym:
         names += ["NioLibResetTransport"]
+    if "NioLibRawExchange" in sym:
+        names += ["NioLibRawExchange", "NioLibGetNetLibStatus", "NioLibNetLibHangup"]
     for i, name in enumerate(names):
         offset, = struct.unpack_from('>h', code, table + 2 * i)
         if table + offset != sym[name]:
@@ -150,7 +152,10 @@ def audit(out, objdump='m68k-palmos-objdump', nm='m68k-palmos-nm'):
     for flag, suffix in (([objdump, '-d'], '.dis'), ([nm, '-n'], '.symbols')):
         (out / ('NioLibTest' + suffix)).write_text(
             subprocess.check_output(flag + [str(out / 'NioLibTest')], text=True))
-    if '%a5' in dis or re.search(r'<(?:PilotMain|_GccStartup|__do_global_ctors)', dis):
+    # A caller-A5 dependency is a memory access through A5 (%a5@...: app globals or its jump table). A bare
+    # "%a5" also turns up in constant data that objdump decodes as instructions (the Network backend's "\r\n" and
+    # "Net.lib" strings live in .text), so only the addressing form counts.
+    if re.search(r'%a5@', dis) or re.search(r'<(?:PilotMain|_GccStartup|__do_global_ctors)', dis):
         raise ValueError("caller A5 dependency or application CRT in library")
     helpers = ['globals_open', 'globals_close', 'globals_test']
     helpers += [name + '_a4' for name in names[8:]]
