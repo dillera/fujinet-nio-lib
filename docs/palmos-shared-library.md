@@ -130,7 +130,7 @@ using earlier compatible traps need no rebuild merely to select USB.
 
 ## Application contract
 
-Current identity is **NioLib / libr / NiL1**, ABI **1.5**, implementation **8**.
+Current identity is **NioLib / libr / NiL1**, ABI **1.6**, implementation **9**.
 See [ABI reference](palmos-shared-abi.md) for capabilities, traps and preferences.
 The client supports networking libraries from ABI 1.1 onward, negotiates optional
 functions, and returns Unsupported instead of calling an unknown JSON trap.
@@ -163,6 +163,7 @@ and the cleanup report through `NioLibClient.h`.
 | 1 | Handspring Springboard CS1, RP2350 module and its separate NIO host link | Raw canonical FujiBus packets over 16-bit registers |
 | 2 | Physical serial cradle/cable and an NIO SLIP backend | Common stream session + SLIP |
 | 3 | Handspring USB cradle, HsUs library and a compatible USB Host backend | Raw canonical FujiBus packets on Generic Port 2 |
+| 4 | Network (ABI 1.6): no FujiNet hardware; the NIO device runs inside NioLib and reaches the Internet through the Palm's NetLib | Packets handled in the library by the NIO core in `shared/netlib/` |
 
 Springboard is the default when no saved preference exists. The backend is
 fixed at BeginClient until EndClient. Configuration/status inspection and saving
@@ -300,3 +301,16 @@ Serial hardware, macOS compile/runtime, ESP32-S3 USB Host, general Palm-branded
 USB, arbitrary physical fault recovery and long-duration heap/stress use remain
 unqualified. ESP32-S3 USB Host is future work: it would be an alternative to the
 RP2350 Springboard configuration, not a simultaneous connection or role switch.
+
+## Network transport (ABI 1.6)
+
+For a Palm with a network but no FujiNet: a Sony Clie with PPP over Bluetooth to a gateway, a Palm with Wi-Fi, a
+modem or a cradle. NioLib runs the NIO device itself (`src/platform/palmos/shared/netlib/`, the C core from
+fujinet-nio-palmOS: NetworkDevice `tcp://` and `http://`, FujiDevice info, WiFiDevice status) and opens sockets with
+NetLib, which dials whatever service the Network preferences select. HTTPS, translation, UDP, clock and files are not
+implemented there. The core's state (about 6 KB) is allocated for each client session only. Select it in NIO Config.
+
+ABI 1.6 also adds `NioLibRawExchange` (one FujiBus packet through the owner's transport), which the client archive uses
+for `fn_raw_call` and the calls built on it (`fn_fuji_get_info`, `fn_wifi_get_status`, `fn_wifi_get_config`), and
+`NioLibGetNetLibStatus` / `NioLibNetLibHangup` for NIO Config. A build without the Handspring SDK (no `UsbMgr.h` in
+`HANDSPRING_INCLUDE`) has no USB backend and does not report `nioLibCapUSB`.
