@@ -8,7 +8,7 @@
 #define REPLY_WAIT_SECONDS 35
 
 /* A request the firmware found damaged is sent again; a reply that fails its
- * check is read again (it stays in place) before giving up. */
+ * check is read again (it stays in place), carefully, before giving up. */
 #define SEND_TRIES 3
 #define READ_RETRIES 3
 
@@ -91,6 +91,46 @@ static uint8_t read_reply(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
     return check == want;
 }
 
+/* read_reply, with every word read until two reads agree. One misread word
+ * spoils a whole pass, and on a Prism a fast reader (NioLib with its checks
+ * per exchange, not per word) misread about one word in a thousand: a 1014-byte
+ * reply then failed its check on all four fast passes about one time in
+ * twenty. The first pass stays fast; only the passes after a failed check pay
+ * for the second reads. */
+static uint8_t read_reply_careful(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
+{
+    uint16_t offset = SBN_R_RESP;
+    uint16_t n = read_stable(SBN_R_RESP_LEN), want = read_stable(SBN_R_RESP_CHECK);
+    uint16_t keep, pairs, words, w, check = 0;
+
+    if (n > SBN_RESP_MAX) return 0;
+    keep = n < cap ? n : cap;
+    pairs = keep >> 1;
+    words = ((n + 1) >> 1) - pairs;
+    while (pairs--) {
+        w = read_stable(offset);
+        offset += 2;
+        check = SBN_CHECK_STEP(check, w);
+        resp[0] = (uint8_t)(w >> 8);
+        resp[1] = (uint8_t)w;
+        resp += 2;
+    }
+    if (words) {
+        w = read_stable(offset);
+        offset += 2;
+        check = SBN_CHECK_STEP(check, w);
+        if (keep & 1) *resp = (uint8_t)(w >> 8);
+        words--;
+    }
+    while (words--) {
+        w = read_stable(offset);
+        offset += 2;
+        check = SBN_CHECK_STEP(check, w);
+    }
+    *resp_len = keep;
+    return check == want;
+}
+
 uint16_t fn_palmos_exchange(const uint8_t *req, uint16_t len, uint8_t *resp, uint16_t cap,
                             uint16_t *resp_len)
 {
@@ -114,7 +154,8 @@ uint16_t fn_palmos_exchange(const uint8_t *req, uint16_t len, uint8_t *resp, uin
     /* Only a good result has a reply to read. */
     if (result != SBN_RES_OK) return result;
     for (tries = 0; tries <= READ_RETRIES; tries++)
-        if (read_reply(resp, cap, resp_len)) return result;
+        if (tries ? read_reply_careful(resp, cap, resp_len) : read_reply(resp, cap, resp_len))
+            return result;
     *resp_len = 0;
     return FN_PALMOS_BAD_READ;
 }

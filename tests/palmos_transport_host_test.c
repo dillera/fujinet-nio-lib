@@ -50,7 +50,12 @@ static struct {
     unsigned corrupt_requests;   /* doorbells that see a damaged first word */
     unsigned silent_doorbells;   /* doorbells that never get a reply */
     unsigned late_polls;         /* RESP_SEQ polls before the reply shows */
-    unsigned bad_read_passes;    /* reply reads whose first word comes back wrong */
+    unsigned bad_read_passes;    /* passes over the reply whose first word comes back wrong */
+    unsigned passes;             /* passes over the reply (a read of word 0 after another word) */
+    unsigned last_index;
+    uint16_t flaky_word;         /* 1 + a reply word whose first read in a pass ... */
+    unsigned flaky_passes;       /* ... comes back wrong in this many passes; a re-read is right */
+    unsigned flaky_armed;
     uint16_t misread_offset;     /* a register that reads back wrong ... */
     unsigned misreads;           /* ... this many times, one read in two */
     uint16_t misread_value;
@@ -148,9 +153,18 @@ uint16_t fn_palmos_test_read(uint32_t address)
     if (offset >= SBN_R_RESP) {
         index = (offset - SBN_R_RESP) / 2;
         ++fw.resp_reads;
-        if (index == 0) {
+        /* A pass starts at word 0 (a careful pass reads each word twice). */
+        if (index == 0 && (fw.passes == 0 || fw.last_index != 0)) {
+            ++fw.passes;
             fw.bad_pass = fw.bad_read_passes != 0;
             if (fw.bad_pass) --fw.bad_read_passes;
+            fw.flaky_armed = fw.flaky_passes != 0;
+            if (fw.flaky_armed) --fw.flaky_passes;
+        }
+        fw.last_index = index;
+        if (fw.flaky_armed && index + 1 == fw.flaky_word) {
+            fw.flaky_armed = 0;
+            return (uint16_t)(fw.resp[index] ^ 0x0400);
         }
         return (uint16_t)(fw.resp[index] ^ ((index == 0 && fw.bad_pass) ? 0x0100 : 0));
     }
@@ -487,23 +501,41 @@ static void test_reread_on_bad_reply_check(void)
     CHECK("init", fn_transport_init() == FN_OK);
 
     fw.bad_read_passes = 3;
+    fw.passes = 0;
     CHECK("read back on the fourth try",
           fn_transport_exchange_buffers(req, sizeof req, resp, sizeof resp, &got) == FN_OK);
-    CHECK("four passes", fw.resp_reads == 4 * 3);
+    CHECK("four passes", fw.passes == 4);
     CHECK("one request", fw.doorbells == 1);
     CHECK("good bytes", got == 6 && memcmp(resp, reply, 6) == 0);
 
     fw.resp_reads = 0;
     fw.doorbells = 0;
     fw.bad_read_passes = 4;
+    fw.passes = 0;
     got = 99;
     CHECK("never reads back",
           fn_transport_exchange_buffers(req, sizeof req, resp, sizeof resp, &got) == FN_ERR_IO);
-    CHECK("gives up after four passes", fw.resp_reads == 4 * 3);
+    CHECK("gives up after four passes", fw.passes == 4);
     CHECK("no length reported", got == 0);
     CHECK("not sent again", fw.doorbells == 1);
     fw.bad_read_passes = 4;
     CHECK("raw code", exchange(req, 2, resp, sizeof resp, &got) == FN_PALMOS_BAD_READ);
+
+    /* A word the module answers late in every pass (its first read wrong, a
+     * re-read right): the fast pass fails, the first careful pass reads it. */
+    fw.bad_read_passes = 0;
+    fw.flaky_word = 2;
+    fw.flaky_passes = 4;
+    fw.passes = 0;
+    fw.doorbells = 0;
+    got = 0;
+    CHECK("flaky word: exchange ok",
+          fn_transport_exchange_buffers(req, sizeof req, resp, sizeof resp, &got) == FN_OK);
+    CHECK("flaky word: read on the second pass", fw.passes == 2);
+    CHECK("flaky word: one request", fw.doorbells == 1);
+    CHECK("flaky word: good bytes", got == 6 && memcmp(resp, reply, 6) == 0);
+    fw.flaky_word = 0;
+    fw.flaky_passes = 0;
 }
 
 /* A register read that comes back wrong once (the module answering late) must
