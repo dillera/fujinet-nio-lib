@@ -51,6 +51,10 @@ static struct {
     unsigned silent_doorbells;   /* doorbells that never get a reply */
     unsigned late_polls;         /* RESP_SEQ polls before the reply shows */
     unsigned bad_read_passes;    /* reply reads whose first word comes back wrong */
+    uint16_t misread_offset;     /* a register that reads back wrong ... */
+    unsigned misreads;           /* ... this many times, one read in two */
+    uint16_t misread_value;
+    unsigned misread_flip;
     unsigned pending_seq, polls_left;
     int bad_pass;
 } fw;
@@ -136,6 +140,11 @@ uint16_t fn_palmos_test_read(uint32_t address)
     ++fw.reads;
     if (!fw.present || address < fw.cs1 || offset >= 0x01000000UL) return 0xFFFF;
     offset &= 0xFFFF;
+    /* A late answer from the module: another word, now and then. */
+    if (fw.misreads && offset == fw.misread_offset && (fw.misread_flip++ & 1) == 0) {
+        --fw.misreads;
+        return fw.misread_value;
+    }
     if (offset >= SBN_R_RESP) {
         index = (offset - SBN_R_RESP) / 2;
         ++fw.resp_reads;
@@ -497,6 +506,48 @@ static void test_reread_on_bad_reply_check(void)
     CHECK("raw code", exchange(req, 2, resp, sizeof resp, &got) == FN_PALMOS_BAD_READ);
 }
 
+/* A register read that comes back wrong once (the module answering late) must
+ * not fail the exchange, send it again or read a reply that is not there. */
+static void test_register_misreads(void)
+{
+    static const uint8_t req[2] = {1, 2};
+    static const uint8_t reply[6] = {1, 2, 3, 4, 5, 6};
+    static const uint16_t offsets[3] = {SBN_R_RESULT, SBN_R_RESP_LEN, SBN_R_RESP_CHECK};
+    uint8_t resp[8];
+    uint16_t got;
+    unsigned i;
+
+    for (i = 0; i < 3; i++) {
+        reset();
+        set_reply(reply, sizeof reply);
+        CHECK("init", fn_transport_init() == FN_OK);
+        fw.misread_offset = offsets[i];
+        fw.misread_value = 0x4502;   /* a word seen in place of RESULT on a Prism */
+        fw.misreads = 1;
+        got = 0;
+        CHECK("misread register: exchange ok",
+              fn_transport_exchange_buffers(req, sizeof req, resp, sizeof resp, &got) == FN_OK);
+        CHECK("misread register: one request", fw.doorbells == 1);
+        CHECK("misread register: one pass over the reply", fw.resp_reads == 3);
+        CHECK("misread register: good bytes", got == 6 && memcmp(resp, reply, 6) == 0);
+    }
+
+    /* RESP_SEQ misread as the sequence just sent, before the reply is in:
+     * the second read does not agree, so the old reply is not taken. */
+    reset();
+    fw.resp_seq = 5;
+    set_reply(reply, sizeof reply);
+    CHECK("init", fn_transport_init() == FN_OK);
+    fw.late_polls = 20;
+    fw.misread_offset = SBN_R_RESP_SEQ;
+    fw.misread_value = 6;
+    fw.misreads = 3;
+    got = 0;
+    CHECK("early sequence: exchange ok", exchange(req, 2, resp, sizeof resp, &got) == SBN_RES_OK);
+    CHECK("early sequence: waited for the reply", fw.resp_seq == 6 && fw.polls_left == 0);
+    CHECK("early sequence: good bytes", got == 6 && memcmp(resp, reply, 6) == 0);
+}
+
 static void check_mapping(uint16_t fw_result, uint8_t expected, const char *name)
 {
     static const uint8_t req[2] = {1, 2};
@@ -679,6 +730,7 @@ int main(void)
     test_sequence();
     test_resend_on_bad_check();
     test_reread_on_bad_reply_check();
+    test_register_misreads();
     test_result_mapping();
     test_no_answer();
     test_not_open();

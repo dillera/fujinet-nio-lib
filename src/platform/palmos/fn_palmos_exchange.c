@@ -16,6 +16,26 @@
 #define FN_PALMOS_EXPIRED(start, wait) (TimGetTicks() - (start) > (wait))
 #endif
 
+/* The module answers each read from its SRAM within the bus cycle, and a read
+ * it answers late returns another word (seen on a Prism, most often just as a
+ * reply is published). The reply words are covered by the check word and read
+ * again when it fails; the registers that say which reply is in place and how
+ * to read it are read until two reads agree, so one misread can neither fail
+ * an exchange nor make it read a reply that is not there yet. */
+#define STABLE_TRIES 4
+
+static uint16_t read_stable(uint16_t offset)
+{
+    uint16_t a = FN_PALMOS_RD(offset), b, tries;
+
+    for (tries = 0; tries < STABLE_TRIES; tries++) {
+        b = FN_PALMOS_RD(offset);
+        if (b == a) break;
+        a = b;
+    }
+    return a;
+}
+
 /* BEGIN, the bytes two per DATA word (first one high), then CHECK over them. */
 static void send_request(const uint8_t *req, uint16_t len)
 {
@@ -42,7 +62,7 @@ static void send_request(const uint8_t *req, uint16_t len)
 static uint8_t read_reply(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
 {
     fn_palmos_port_t port = FN_PALMOS_PORT(_fn_palmos_cs1 + SBN_R_RESP);
-    uint16_t n = FN_PALMOS_RD(SBN_R_RESP_LEN), want = FN_PALMOS_RD(SBN_R_RESP_CHECK);
+    uint16_t n = read_stable(SBN_R_RESP_LEN), want = read_stable(SBN_R_RESP_CHECK);
     uint16_t keep, pairs, words, w, check = 0;
 
     if (n > SBN_RESP_MAX) return 0;
@@ -85,9 +105,11 @@ uint16_t fn_palmos_exchange(const uint8_t *req, uint16_t len, uint8_t *resp, uin
         send_request(req, len);
         FN_PALMOS_WR(SBN_W_DOORBELL, _fn_palmos_seq);
         start = TimGetTicks();
-        while (FN_PALMOS_RD(SBN_R_RESP_SEQ) != _fn_palmos_seq)
+        /* A match counts once a second read agrees. */
+        while (FN_PALMOS_RD(SBN_R_RESP_SEQ) != _fn_palmos_seq ||
+               FN_PALMOS_RD(SBN_R_RESP_SEQ) != _fn_palmos_seq)
             if (FN_PALMOS_EXPIRED(start, wait)) return FN_PALMOS_NO_ANSWER;
-        result = FN_PALMOS_RD(SBN_R_RESULT);
+        result = read_stable(SBN_R_RESULT);
     }
     /* Only a good result has a reply to read. */
     if (result != SBN_RES_OK) return result;

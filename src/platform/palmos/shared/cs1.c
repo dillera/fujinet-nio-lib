@@ -120,13 +120,28 @@ void nl_bus_write(UInt32 address, UInt16 value)
     *(volatile UInt16 *)address = value;
 }
 
+/* A register read until two reads agree, as in fn_palmos_exchange.c: the
+ * module answers each read from SRAM within the bus cycle, and one it answers
+ * late returns another word (seen on a Prism), which must not fail or
+ * misdirect an exchange. */
+static UInt16 stable_rd(UInt16 offset)
+{
+    UInt16 a = FN_PALMOS_RD(offset), b, tries;
+    for (tries = 0; tries < 4; tries++) {
+        b = FN_PALMOS_RD(offset);
+        if (b == a) break;
+        a = b;
+    }
+    return a;
+}
+
 static Boolean settled(UInt16 seq)
 {
     UInt16 first, ack, response, last;
-    first = FN_PALMOS_RD(SBN_R_STATUS);
-    ack = FN_PALMOS_RD(SBN_R_ACK_SEQ);
-    response = FN_PALMOS_RD(SBN_R_RESP_SEQ);
-    last = FN_PALMOS_RD(SBN_R_STATUS);
+    first = stable_rd(SBN_R_STATUS);
+    ack = stable_rd(SBN_R_ACK_SEQ);
+    response = stable_rd(SBN_R_RESP_SEQ);
+    last = stable_rd(SBN_R_STATUS);
     return !invalid && !((first | last) & SBN_ST_BUSY) && ack == response &&
            (!seq || response == seq);
 }
@@ -140,7 +155,7 @@ static Boolean synchronize(void)
             return false;
     }
     if (!settled(0)) return false;
-    _fn_palmos_seq = (UInt8)FN_PALMOS_RD(SBN_R_RESP_SEQ);
+    _fn_palmos_seq = (UInt8)stable_rd(SBN_R_RESP_SEQ);
     return !invalid;
 }
 
@@ -151,7 +166,7 @@ UInt16 nl_cs1_probe(UInt16 *hostP, UInt16 *busyP)
     if (!supported()) return FN_ERR_NOT_FOUND;
     if (_fn_palmos_cs1 && !mapping_valid()) return FN_ERR_NOT_FOUND;
     if (!fn_palmos_open() || invalid) return FN_ERR_NOT_FOUND;
-    status = FN_PALMOS_RD(SBN_R_STATUS);
+    status = stable_rd(SBN_R_STATUS);
     *hostP = !!(status & SBN_ST_HOST);
     *busyP = !!(status & SBN_ST_BUSY);
     return invalid ? FN_ERR_NOT_FOUND : FN_OK;
@@ -162,7 +177,7 @@ UInt16 nl_cs1_begin(void)
     UInt16 host, busy, result;
     result = nl_cs1_probe(&host, &busy);
     if (result) return result;
-    if (FN_PALMOS_RD(SBN_R_STATUS) & SBN_ST_LOOPBACK) return FN_ERR_NOT_READY;
+    if (stable_rd(SBN_R_STATUS) & SBN_ST_LOOPBACK) return FN_ERR_NOT_READY;
     if (!synchronize()) return FN_ERR_BUSY;
     return FN_OK; /* Module presence does not assert host/Internet availability. */
 }
@@ -232,7 +247,7 @@ uint16_t fn_palmos_exchange(const uint8_t *request, uint16_t length,
     /* The upstream reader checks every response word, even beyond capacity.
      * Reject truncation/mismatched packets before a common service uses them. */
     if (result == SBN_RES_OK && (*got < FN_HEADER_SIZE ||
-        FN_PALMOS_RD(SBN_R_RESP_LEN) != *got ||
+        stable_rd(SBN_R_RESP_LEN) != *got ||
         response[0] != request[0] || response[1] != request[1] ||
         FN_READ_LE16(response, 2) != *got ||
         fn_calc_packet_checksum(response, *got) != response[FN_CHECKSUM_OFFSET] ||
