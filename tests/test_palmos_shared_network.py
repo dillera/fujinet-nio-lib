@@ -47,6 +47,7 @@ class NetworkMachine(foundation.PalmMachine):
         self.forced_result = 0
         self.wrong_handle, self.short_zone = False, False
         self.pref_write_failure, self.recorded_before_post = False, False
+        self.ftr_write_failure = False
         self.pending_request, self.pending_seq = None, 0
         self.hs_calls, self.mmio, self.doorbells = 0, 0, 0
         self.sequences = []
@@ -92,7 +93,8 @@ class NetworkMachine(foundation.PalmMachine):
                 uc.mem_write(self.read32(sp + 6), struct.pack('>I', self.features[key]))
             else: result = 1
         elif trap == 0xa27c:
-            self.features[self.read32(sp), self.read16(sp + 4)] = self.read32(sp + 6)
+            if self.ftr_write_failure: result = 1
+            else: self.features[self.read32(sp), self.read16(sp + 4)] = self.read32(sp + 6)
         elif trap == 0xa2d3:
             key = self.read32(sp), self.read16(sp + 4)
             if key not in self.preferences: result = 0xffff
@@ -154,8 +156,9 @@ class NetworkMachine(foundation.PalmMachine):
             elif off == 0x30000:
                 self.doorbells += 1
                 self.sequences.append(value)
-                p = self.preferences.get((0x4e694c31, 0x4e32))
-                assert p and struct.unpack('>IIHH', p[1])[:3] == (0x4e4c5031, self.CS1, value)
+                # The CS1 marker: one feature, the CS1 base with the sequence in its low byte.
+                p = self.features.get((0x4e694c31, 0x4e32))
+                assert p is not None and (p & ~0xff, p & 0xff) == (self.CS1, value)
                 self.recorded_before_post = True
                 self.regs[6] = value
                 if self.bad_check:
@@ -348,10 +351,10 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(m.close(), (0, 0))
 
     def test_failed_tombstone_publication_never_posts_doorbell(self):
-        m = NetworkMachine(); m.open(); _, token, _ = m.begin(); m.pref_write_failure = True
+        m = NetworkMachine(); m.open(); _, token, _ = m.begin(); m.ftr_write_failure = True
         self.assertNotEqual(m.clock(token)[1], 0)
         self.assertEqual(m.doorbells, 0)
-        m.pref_write_failure = False; m.end(token); m.close()
+        m.ftr_write_failure = False; m.end(token); m.close()
 
     def test_compatibility_client_idempotent_init_and_shutdown(self):
         m = NetworkMachine()
@@ -434,7 +437,7 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(m.mmio, before)
         m.end(token); m.close()
         m = NetworkMachine(); m.open()
-        m.preferences[0x4e694c31, 0x4e32] = (99, b'incompatible')
+        m.features[0x4e694c31, 0x4e32] = 5  # a sequence with no CS1 base
         self.assertNotEqual(m.begin()[2], 0)
         self.assertEqual(m.doorbells, 0)
         self.assertEqual(m.close(), (0, 0))

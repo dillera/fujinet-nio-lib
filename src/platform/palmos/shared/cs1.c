@@ -11,20 +11,34 @@ Err nl_hs_get(UInt16 card, UInt16 attr, void *value)
 uint16_t nl_original_exchange(const uint8_t *, uint16_t, uint8_t *, uint16_t, uint16_t *);
 
 /* This is an ownership tombstone, NOT a saved network session/configuration.
- * Unsaved preferences survive unload; soft-reset persistence is a hardware
- * acceptance check, not assumed by the recovery API. Publishing
- * and read-back must succeed BEFORE the doorbell is physically posted. */
-#define PENDING_PREF 0x4e32
-#define PENDING_MAGIC 0x4e4c5031UL
-typedef struct { UInt32 magic, base; UInt16 sequence, reserved; } Pending;
+ * It is a feature (one UInt32: the CS1 base, whose low byte is always zero,
+ * with the posted sequence in that byte), so writing it is a table update,
+ * not a database write: a preference here cost about 116 ms per exchange on
+ * a Visor Prism. Features survive library unload and are cleared by a soft
+ * reset, which the recovery API never assumed it survives. Publishing and
+ * read-back must succeed BEFORE the doorbell is physically posted. */
+#define PENDING_FTR 0x4e32
+typedef struct { UInt32 base; UInt16 sequence; } Pending;
 static UInt16 candidate_card, invalid, posted, ambiguous, last_result;
 static UInt32 started, budget;
 
+/* Bus accesses between clock reads, and how often (ticks) a running exchange
+ * re-checks that the module is still mapped. Every exchange and doorbell
+ * checks the mapping in full; checking it on every word (seven system calls)
+ * cost about 1.3 ms per word, and could not close the removal race anyway. */
+#define CLOCK_EVERY 32
+static UInt16 mapped, accesses;
+static UInt32 mapped_at, recheck;
+
 static Boolean supported(void)
 {
+    static UInt16 known;
     UInt32 version;
-    /* HsExtCommon.h: hsFtrCreator='hsEx', hsFtrIDVersion=0. */
-    return FtrGet('hsEx', 0, &version) == errNone && version != 0;
+    /* HsExtCommon.h: hsFtrCreator='hsEx', hsFtrIDVersion=0. Only a positive
+     * answer is kept: the extensions cannot leave while NioLib is loaded. */
+    if (known) return true;
+    known = FtrGet('hsEx', 0, &version) == errNone && version != 0;
+    return known;
 }
 
 Err nl_card_attr(UInt16 card, UInt16 attr, void *value)
@@ -41,6 +55,7 @@ static Boolean mapping_valid(void)
     UInt8 installed = 0;
     UInt32 base = 0, size = 0;
     UInt16 card = _fn_palmos_card ? _fn_palmos_card : candidate_card;
+    mapped = 0;
     if (!_fn_palmos_cs1 || !card ||
         nl_card_attr(card, 1, &installed) || !installed ||
         nl_card_attr(card, 3, &base) || nl_card_attr(card, 4, &size) ||
@@ -49,15 +64,34 @@ static Boolean mapping_valid(void)
         invalid = 1;
         return false;
     }
+    mapped = 1;
+    mapped_at = TimGetTicks();
     return true;
+}
+
+/* Before a bus access: the deadline and the mapping, checked in full when no
+ * check has passed in this exchange, else every CLOCK_EVERY accesses once
+ * recheck ticks have passed. */
+static Boolean bus_ok(void)
+{
+    UInt32 now;
+    if (invalid) return false;
+    if (mapped && ++accesses < CLOCK_EVERY) return true;
+    accesses = 0;
+    now = TimGetTicks();
+    if (now - started >= budget) { invalid = 1; return false; }
+    if (mapped && now - mapped_at < recheck) return true;
+    return mapping_valid();
 }
 
 void nl_deadline(UInt16 milliseconds)
 {
+    UInt16 rate = SysTicksPerSecond();
     started = TimGetTicks();
-    budget = ((UInt32)milliseconds * SysTicksPerSecond() + 999) / 1000;
+    budget = ((UInt32)milliseconds * rate + 999) / 1000;
     if (!budget) budget = 1;
-    invalid = 0;
+    recheck = rate / 4 ? rate / 4 : 1;
+    invalid = 0; mapped = 0; accesses = 0;
     posted = ambiguous = 0; last_result = 0xffff;
 }
 
@@ -69,20 +103,19 @@ int nl_expired(UInt32 start, UInt32 wait)
 
 static Boolean pending_get(Pending *p)
 {
-    UInt16 size = sizeof(*p);
-    Int16 version;
-    p->magic = PENDING_MAGIC; p->base = 0; p->sequence = p->reserved = 0;
-    version = PrefGetAppPreferences(nioLibCreator, PENDING_PREF, p, &size, false);
-    return version == noPreferenceFound ||
-        (version == 1 && size == sizeof(*p) && p->magic == PENDING_MAGIC &&
-         p->sequence <= 255 && p->reserved == 0 && (!p->sequence || p->base));
+    UInt32 value;
+    p->base = 0; p->sequence = 0;
+    if (FtrGet(nioLibCreator, PENDING_FTR, &value) != errNone) return true; /* none */
+    p->base = value & ~0xffUL;
+    p->sequence = (UInt16)(value & 0xff);
+    return !p->sequence || p->base;
 }
 
 static Boolean pending_set(UInt32 base, UInt16 seq)
 {
-    Pending p, check;
-    p.magic = PENDING_MAGIC; p.base = base; p.sequence = seq; p.reserved = 0;
-    PrefSetAppPreferences(nioLibCreator, PENDING_PREF, 1, &p, sizeof(p), false);
+    Pending check;
+    if ((base & 0xff) || seq > 255) return false;
+    if (FtrSet(nioLibCreator, PENDING_FTR, base | seq) != errNone) return false;
     return pending_get(&check) && check.base == base && check.sequence == seq;
 }
 
@@ -100,15 +133,16 @@ Err nl_cs1_reset(void)
 
 UInt16 nl_bus_read(UInt32 address)
 {
-    if (nl_expired(started, budget)) { invalid = 1; return 0; }
-    if (!mapping_valid()) return 0;
+    if (!bus_ok()) return 0;
     return *(volatile UInt16 *)address;
 }
 
 void nl_bus_write(UInt32 address, UInt16 value)
 {
-    if (!mapping_valid() || nl_expired(started, budget)) return;
+    if (!bus_ok()) return;
     if (address == _fn_palmos_cs1 + SBN_W(SBN_W_DOORBELL)) {
+        /* A doorbell checks the mapping in full, before and after the marker. */
+        if (!mapping_valid()) return;
         if (!pending_set(_fn_palmos_cs1, value)) { invalid = 1; return; }
         if (!mapping_valid()) {
             /* We know this doorbell was never posted. */
