@@ -147,6 +147,7 @@ class NetworkMachine(foundation.PalmMachine):
         assert size == 2, 'peripheral access is not MOVE.W'
         self.mmio += 1
         off = address - self.CS1
+        value &= 0xffff  # a word; unicorn can pass a write sign-extended
         if access == UC_MEM_WRITE:
             if off == 0x10000: self.request = bytearray(); self.wanted = value
             elif off == 0: self.request += struct.pack('>H', value)
