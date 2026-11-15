@@ -81,7 +81,7 @@ typedef struct {
 #define nioLibTrapNetLibStatus (sysLibTrapCustom + 20)
 #define nioLibTrapNetLibHangup (sysLibTrapCustom + 21)
 #define nioNetLibPresent 1                /* the Palm has NetLib */
-#define nioNetLibUp 2                     /* NetLib is open: a link (as far as NetLib knows) */
+#define nioNetLibUp 2                     /* NetLib is open or in its close-wait: a link (as far as NetLib knows) */
 #define nioNetLibSession 4                /* a client session is using the Network transport now */
 typedef struct {
     UInt16 size, flags, sessions, connects, failures, reserved;

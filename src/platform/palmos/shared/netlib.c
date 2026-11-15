@@ -10,6 +10,8 @@
 
 static NioState *nl_nio;
 #define nl_on (nl_nio != NULL)
+/* The last session's counters, kept when its state is freed, so NIO Config can show what a run did after it ends. */
+static struct { UInt16 connects, failures; UInt32 bytesIn, bytesOut; } nl_last;
 
 /* NetLib is present: no proof of a configured service, a link or the Internet. */
 UInt16 nl_netlib_available(void)
@@ -35,6 +37,10 @@ void nl_netlib_close(void)
 {
     /* Closes every socket; NetLib keeps the link for its idle time, so the next app need not dial again. */
     if (!nl_on) return;
+    nl_last.connects = nl_nio->net.connects;
+    nl_last.failures = nl_nio->net.failures;
+    nl_last.bytesIn = nl_nio->net.bytesIn;
+    nl_last.bytesOut = nl_nio->net.bytesOut;
     nio_shutdown(nl_nio);
     MemPtrFree(nl_nio);
     nl_nio = NULL;
@@ -50,15 +56,29 @@ UInt16 nl_netlib_exchange(const UInt8 *request, UInt16 length, UInt8 *response, 
     return *got ? FN_OK : FN_ERR_INVALID;
 }
 
-/* The link and the counters, for NIO Config. While no client session is open the core has no state: then only
- * whether NetLib is open (by anyone) and its address are known. */
+static void nl_address(UInt16 ref, NioLibNetLibStatus *s)
+{
+    NioNet probe;
+    MemSet(&probe, sizeof(probe), 0);
+    probe.ref = ref;
+    probe.open = 1;
+    nio_sock_local_ip(&probe, s->ip, sizeof(s->ip));
+}
+
+/* The link and the counters, for NIO Config. During a client session they are the session's; otherwise the counters
+ * are the last session's and the link is NetLib's: up while anyone has NetLib open, or while it is in its close-wait
+ * (closed by everyone, the link kept for its idle time, as after NIO Config's Connect or a finished session). The
+ * close-wait check takes NetLib for a moment, which never dials, and lets it go again, which starts its idle time
+ * over: a link stays up while NIO Config keeps showing it. */
 void nl_netlib_status(NioLibNetLibStatus *s)
 {
     UInt16 ref = 0, count = 0;
     s->flags = 0;
     s->sessions = 0;
-    s->connects = s->failures = 0;
-    s->bytesIn = s->bytesOut = 0;
+    s->connects = nl_last.connects;
+    s->failures = nl_last.failures;
+    s->bytesIn = nl_last.bytesIn;
+    s->bytesOut = nl_last.bytesOut;
     s->ip[0] = 0;
     if (!nl_netlib_available()) return;
     s->flags |= nioNetLibPresent;
@@ -73,27 +93,25 @@ void nl_netlib_status(NioLibNetLibStatus *s)
         if (nl_nio->net_up) nio_sock_local_ip(&nl_nio->net, s->ip, sizeof(s->ip));
         return;
     }
-    if (SysLibFind("Net.lib", &ref) == errNone && NetLibOpenCount(ref, &count) == errNone && count) {
-        NioNet probe;
-        MemSet(&probe, sizeof(probe), 0);
-        probe.ref = ref;
-        probe.open = 1;
+    if (SysLibFind("Net.lib", &ref) || NetLibOpenCount(ref, &count)) return;
+    if (count) {
         s->flags |= nioNetLibUp;
-        nio_sock_local_ip(&probe, s->ip, sizeof(s->ip));
+        nl_address(ref, s);
+    } else if (NetLibOpenIfCloseWait(ref) == errNone) {
+        s->flags |= nioNetLibUp;
+        nl_address(ref, s);
+        NetLibClose(ref, false);
     }
 }
 
-/* NIO Config's Disconnect: the link goes now, not after NetLib's idle time. Only when no client owns the library. */
+/* NIO Config's Hang up: the link goes now, not after NetLib's idle time. A link in its close-wait is taken and closed
+ * at once; one that something still has open (a client session, another program) is left alone: nioLibErrBusy. */
 Err nl_netlib_hangup(void)
 {
     UInt16 ref = 0, count = 0;
     if (nl_on) return nioLibErrBusy;
-    if (SysLibFind("Net.lib", &ref) || NetLibOpenCount(ref, &count) || !count) return errNone;
-    /* Opened by someone and now idle in its close-wait: open once more and close at once. */
-    {
-        UInt16 ifErrs = 0;
-        Err err = NetLibOpen(ref, &ifErrs);
-        if (err == errNone || err == netErrAlreadyOpen) NetLibClose(ref, true);
-    }
+    if (SysLibFind("Net.lib", &ref) || NetLibOpenCount(ref, &count)) return errNone;
+    if (count) return nioLibErrBusy;
+    if (NetLibOpenIfCloseWait(ref) == errNone) NetLibClose(ref, true);
     return errNone;
 }

@@ -312,5 +312,8 @@ implemented there. The core's state (about 6 KB) is allocated for each client se
 
 ABI 1.6 also adds `NioLibRawExchange` (one FujiBus packet through the owner's transport), which the client archive uses
 for `fn_raw_call` and the calls built on it (`fn_fuji_get_info`, `fn_wifi_get_status`, `fn_wifi_get_config`), and
-`NioLibGetNetLibStatus` / `NioLibNetLibHangup` for NIO Config. A build without the Handspring SDK (no `UsbMgr.h` in
-`HANDSPRING_INCLUDE`) has no USB backend and does not report `nioLibCapUSB`.
+`NioLibGetNetLibStatus` / `NioLibNetLibHangup` for NIO Config. Between sessions the status's counters are the last
+session's, and the link counts as up while NetLib is open or in its close-wait (the link kept for its idle time after
+everyone closed it); checking the close-wait never dials, but starts the idle time over. Hang up closes a link in its
+close-wait at once, and answers `nioLibErrBusy` while anything still has NetLib open. A build without the Handspring SDK
+(no `UsbMgr.h` in `HANDSPRING_INCLUDE`) has no USB backend and does not report `nioLibCapUSB`.

@@ -293,7 +293,7 @@ class CompiledM68KTests(unittest.TestCase):
         if 'nl_usb_open' in m.symbols: version = (8, 1, 3, 6)
         if 'NioLibNetJsonQuery' in m.symbols: version = (8, 1, 4, 7)
         if 'NioLibResetTransport' in m.symbols: version = (8, 1, 5, 8)
-        if 'NioLibRawExchange' in m.symbols: version = (8, 1, 6, 9)
+        if 'NioLibRawExchange' in m.symbols: version = (8, 1, 6, 10)
         self.assertEqual(struct.unpack('>4H', m.uc.mem_read(0x8000, 8)), version)
         self.assertEqual(m.globals, 0)
         self.assertFalse(m.allocations)
