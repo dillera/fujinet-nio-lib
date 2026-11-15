@@ -56,10 +56,17 @@ static struct {
     uint16_t flaky_word;         /* 1 + a reply word whose first read in a pass ... */
     unsigned flaky_passes;       /* ... comes back wrong in this many passes; a re-read is right */
     unsigned flaky_armed;
+    uint16_t jitter_word;        /* 1 + a reply word that reads differently every time */
+    unsigned jitter_flip;
     uint16_t misread_offset;     /* a register that reads back wrong ... */
     unsigned misreads;           /* ... this many times, one read in two */
     uint16_t misread_value;
     unsigned misread_flip;
+    uint16_t script_offset;      /* a register whose reads come from script[] ... */
+    uint16_t script[8];          /* ... in turn, round and round ... */
+    unsigned script_len;
+    unsigned script_reads;       /* ... for this many reads, then the true value */
+    unsigned script_pos;
     unsigned pending_seq, polls_left;
     int bad_pass;
 } fw;
@@ -145,6 +152,11 @@ uint16_t fn_palmos_test_read(uint32_t address)
     ++fw.reads;
     if (!fw.present || address < fw.cs1 || offset >= 0x01000000UL) return 0xFFFF;
     offset &= 0xFFFF;
+    /* A register that keeps reading back different words. */
+    if (fw.script_reads && offset == fw.script_offset) {
+        --fw.script_reads;
+        return fw.script[fw.script_pos++ % fw.script_len];
+    }
     /* A late answer from the module: another word, now and then. */
     if (fw.misreads && offset == fw.misread_offset && (fw.misread_flip++ & 1) == 0) {
         --fw.misreads;
@@ -166,6 +178,8 @@ uint16_t fn_palmos_test_read(uint32_t address)
             fw.flaky_armed = 0;
             return (uint16_t)(fw.resp[index] ^ 0x0400);
         }
+        if (index + 1 == fw.jitter_word)
+            return (uint16_t)(fw.resp[index] ^ ((fw.jitter_flip++ & 1) ? 0x0200 : 0x0100));
         return (uint16_t)(fw.resp[index] ^ ((index == 0 && fw.bad_pass) ? 0x0100 : 0));
     }
     switch (offset) {
@@ -580,6 +594,105 @@ static void test_register_misreads(void)
     CHECK("early sequence: good bytes", got == 6 && memcmp(resp, reply, 6) == 0);
 }
 
+static void script(uint16_t offset, const uint16_t *words, unsigned n, unsigned reads)
+{
+    fw.script_offset = offset;
+    memcpy(fw.script, words, n * sizeof words[0]);
+    fw.script_len = n;
+    fw.script_reads = reads;
+    fw.script_pos = 0;
+}
+
+/* A word that never reads the same twice in a row is not read at all. An
+ * unsettled RESULT neither sends the request again (it may have run) nor takes
+ * a reply; an unsettled length, check or reply word ends that attempt at the
+ * reply, before any reply word of it is read. */
+static void test_unsettled_reads(void)
+{
+    static const uint8_t req[2] = {1, 2};
+    static const uint8_t reply[6] = {1, 2, 3, 4, 5, 6};
+    /* From a scripted fault probe: five reads, no two alike, the last BAD_CHECK. */
+    static const uint16_t to_bad_check[5] = {0x1111, 0x2222, 0x3333, 0x4444, SBN_RES_BAD_CHECK};
+    static const uint16_t to_ok[5] = {0x1111, 0x2222, 0x3333, 0x4444, SBN_RES_OK};
+    static const uint16_t lengths[2] = {4, 6};
+    static const uint16_t sequences[2] = {6, 5};
+    uint8_t resp[8];
+    uint16_t got;
+
+    reset();
+    set_reply(reply, sizeof reply);
+    CHECK("init", fn_transport_init() == FN_OK);
+    script(SBN_R_RESULT, to_bad_check, 5, 5);
+    got = 99;
+    CHECK("unsettled BAD_CHECK: no answer taken",
+          exchange(req, 2, resp, sizeof resp, &got) == FN_PALMOS_BAD_READ);
+    CHECK("unsettled BAD_CHECK: not sent again", fw.doorbells == 1);
+    CHECK("unsettled BAD_CHECK: reply left alone", fw.resp_reads == 0 && got == 0);
+    script(SBN_R_RESULT, to_bad_check, 5, 5);
+    CHECK("unsettled BAD_CHECK: transport error",
+          fn_transport_exchange_buffers(req, 2, resp, sizeof resp, &got) == FN_ERR_IO);
+    CHECK("unsettled BAD_CHECK: still one request each", fw.doorbells == 2);
+
+    /* NIO was not running, and RESULT ends on OK: no reply is taken. */
+    reset();
+    set_reply(reply, sizeof reply);
+    CHECK("init", fn_transport_init() == FN_OK);
+    fw.forced_result = SBN_RES_NO_HOST;
+    script(SBN_R_RESULT, to_ok, 5, 5);
+    got = 99;
+    CHECK("unsettled OK: not taken", exchange(req, 2, resp, sizeof resp, &got) == FN_PALMOS_BAD_READ);
+    CHECK("unsettled OK: one request", fw.doorbells == 1);
+    CHECK("unsettled OK: reply left alone", fw.resp_reads == 0 && got == 0);
+    fw.forced_result = 0;
+
+    /* RESP_LEN between two plausible lengths for the first attempt: it reads
+     * no reply word, and the next attempt reads the reply. */
+    script(SBN_R_RESP_LEN, lengths, 2, 5);
+    fw.doorbells = 0; fw.passes = 0; got = 0;
+    CHECK("unsettled length once: ok", exchange(req, 2, resp, sizeof resp, &got) == SBN_RES_OK);
+    CHECK("unsettled length once: one pass", fw.passes == 1);
+    CHECK("unsettled length once: one request", fw.doorbells == 1);
+    CHECK("unsettled length once: good bytes", got == 6 && memcmp(resp, reply, 6) == 0);
+
+    /* ... for every attempt: no pass at all, and no length reported. */
+    script(SBN_R_RESP_LEN, lengths, 2, 100);
+    fw.doorbells = 0; fw.passes = 0; got = 99;
+    CHECK("unsettled length: gives up", exchange(req, 2, resp, sizeof resp, &got) == FN_PALMOS_BAD_READ);
+    CHECK("unsettled length: no pass", fw.passes == 0);
+    CHECK("unsettled length: one request", fw.doorbells == 1);
+    CHECK("unsettled length: no length", got == 0);
+
+    /* RESP_CHECK, the same. */
+    script(SBN_R_RESP_CHECK, lengths, 2, 100);
+    fw.doorbells = 0; fw.passes = 0; got = 99;
+    CHECK("unsettled check: gives up", exchange(req, 2, resp, sizeof resp, &got) == FN_PALMOS_BAD_READ);
+    CHECK("unsettled check: no pass", fw.passes == 0);
+    CHECK("unsettled check: one request", fw.doorbells == 1);
+    fw.script_reads = 0;
+
+    /* A reply word that never settles: each careful attempt stops at it, so
+     * the fast pass reads 3 words and each of three careful ones 2 + 5. */
+    fw.jitter_word = 2;
+    fw.doorbells = 0; fw.passes = 0; fw.resp_reads = 0; got = 99;
+    CHECK("unsettled word: gives up", exchange(req, 2, resp, sizeof resp, &got) == FN_PALMOS_BAD_READ);
+    CHECK("unsettled word: careful attempts stop at it", fw.resp_reads == 3 + 3 * (2 + 5));
+    CHECK("unsettled word: one request", fw.doorbells == 1);
+    CHECK("unsettled word: no length", got == 0);
+    fw.jitter_word = 0;
+
+    /* RESP_SEQ between the new sequence and the old one as the reply goes up:
+     * the reply counts once two reads in a row give the new one. */
+    reset();
+    fw.resp_seq = 5;
+    set_reply(reply, sizeof reply);
+    CHECK("init", fn_transport_init() == FN_OK);
+    script(SBN_R_RESP_SEQ, sequences, 2, 9);
+    got = 0;
+    CHECK("plausible sequences: ok", exchange(req, 2, resp, sizeof resp, &got) == SBN_RES_OK);
+    CHECK("plausible sequences: one request", fw.doorbells == 1);
+    CHECK("plausible sequences: good bytes", got == 6 && memcmp(resp, reply, 6) == 0);
+}
+
 static void check_mapping(uint16_t fw_result, uint8_t expected, const char *name)
 {
     static const uint8_t req[2] = {1, 2};
@@ -763,6 +876,7 @@ int main(void)
     test_resend_on_bad_check();
     test_reread_on_bad_reply_check();
     test_register_misreads();
+    test_unsettled_reads();
     test_result_mapping();
     test_no_answer();
     test_not_open();

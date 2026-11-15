@@ -22,12 +22,19 @@ typedef struct { UInt32 base; UInt16 sequence; } Pending;
 static UInt16 candidate_card, invalid, posted, ambiguous, last_result;
 static UInt32 started, budget;
 
-/* Data words between clock reads, and how often (ticks) a running exchange
- * re-checks that the module is still mapped. Every exchange and doorbell
- * checks the mapping in full; checking it on every word (seven system calls)
- * cost about 1.3 ms per word, and could not close the removal race anyway.
- * A register access (status polls among them) reads the clock every time, so
- * the deadline still ends bus access within one poll. */
+/* Reads: reply words between clock reads, and how often (ticks) a running
+ * exchange re-checks that the module is still mapped. A register read (status
+ * polls among them) reads the clock every time, so the deadline still ends bus
+ * access within one poll. Checking the mapping in full on every word (seven
+ * system calls) cost about 1.3 ms per word on a Visor Prism, and a read of a
+ * moved module can only bring back a word the exchange then rejects.
+ *
+ * Writes: every one checks the mapping in full first, as before. A write
+ * through a mapping that has changed could land on another card, and nothing
+ * afterwards undoes it; request words are few next to reply words.
+ *
+ * Every check of the mapping, by either, is followed by the deadline, read
+ * after its system calls: a check that runs past it stops the access. */
 #define CLOCK_EVERY 32
 static UInt16 mapped, accesses;
 static UInt32 mapped_at, recheck;
@@ -71,20 +78,33 @@ static Boolean mapping_valid(void)
     return true;
 }
 
-/* Before a bus access: the deadline, and the mapping, checked in full when no
- * check has passed in this exchange, else once recheck ticks have passed. A
- * data word (a reply word, or a request word) reads the clock only every
- * CLOCK_EVERY words; a register access reads it every time. */
-static Boolean bus_ok(Boolean data)
+/* The deadline at now, a time read after any system calls before it. */
+static Boolean in_time(UInt32 now)
+{
+    if (now - started >= budget) { invalid = 1; return false; }
+    return true;
+}
+
+/* Before a read: the deadline, and the mapping, checked in full when no check
+ * has passed in this exchange, else once recheck ticks have passed. A reply
+ * word reads the clock only every CLOCK_EVERY words; a register read reads it
+ * every time. */
+static Boolean read_ok(Boolean reply)
 {
     UInt32 now;
     if (invalid) return false;
-    if (data && mapped && ++accesses < CLOCK_EVERY) return true;
+    if (reply && mapped && ++accesses < CLOCK_EVERY) return true;
     accesses = 0;
     now = TimGetTicks();
-    if (now - started >= budget) { invalid = 1; return false; }
+    if (!in_time(now)) return false;
     if (mapped && now - mapped_at < recheck) return true;
-    return mapping_valid();
+    return mapping_valid() && in_time(mapped_at);
+}
+
+/* Before a write: the mapping in full, then the deadline. */
+static Boolean write_ok(void)
+{
+    return !invalid && mapping_valid() && in_time(mapped_at);
 }
 
 void nl_deadline(UInt16 milliseconds)
@@ -104,11 +124,16 @@ int nl_expired(UInt32 start, UInt32 wait)
     return invalid || now - started >= budget || now - start > wait;
 }
 
+/* False when the marker cannot be known. Only a missing feature means none:
+ * any other FtrGet error fails closed. */
 static Boolean pending_get(Pending *p)
 {
     UInt32 value;
+    Err err;
     p->base = 0; p->sequence = 0;
-    if (FtrGet(nioLibCreator, PENDING_FTR, &value) != errNone) return true; /* none */
+    err = FtrGet(nioLibCreator, PENDING_FTR, &value);
+    if (err == ftrErrNoSuchFeature) return true;
+    if (err != errNone) return false;
     p->base = value & ~0xffUL;
     p->sequence = (UInt16)(value & 0xff);
     return !p->sequence || p->base;
@@ -136,18 +161,17 @@ Err nl_cs1_reset(void)
 
 UInt16 nl_bus_read(UInt32 address)
 {
-    if (!bus_ok(address - _fn_palmos_cs1 >= SBN_R_RESP)) return 0;
+    if (!read_ok(address - _fn_palmos_cs1 >= SBN_R_RESP)) return 0;
     return *(volatile UInt16 *)address;
 }
 
 void nl_bus_write(UInt32 address, UInt16 value)
 {
-    if (!bus_ok(address == _fn_palmos_cs1 + SBN_W(SBN_W_DATA))) return;
+    if (!write_ok()) return;
     if (address == _fn_palmos_cs1 + SBN_W(SBN_W_DOORBELL)) {
-        /* A doorbell checks the mapping in full, before and after the marker. */
-        if (!mapping_valid()) return;
+        /* The marker, then the mapping and the deadline again. */
         if (!pending_set(_fn_palmos_cs1, value)) { invalid = 1; return; }
-        if (!mapping_valid()) {
+        if (!write_ok()) {
             /* We know this doorbell was never posted. */
             pending_set(0, 0);
             return;
@@ -160,40 +184,40 @@ void nl_bus_write(UInt32 address, UInt16 value)
 /* A register read until two reads agree, as in fn_palmos_exchange.c: the
  * module answers each read from SRAM within the bus cycle, and one it answers
  * late returns another word (seen on a Prism), which must not fail or
- * misdirect an exchange. */
-static UInt16 stable_rd(UInt16 offset)
+ * misdirect an exchange. False if no two reads in a row agree, or the bus
+ * refused a read: the register was not read. */
+static Boolean stable_rd(UInt16 offset, UInt16 *value)
 {
     UInt16 a = FN_PALMOS_RD(offset), b, tries;
     for (tries = 0; tries < 4; tries++) {
         b = FN_PALMOS_RD(offset);
-        if (b == a) break;
+        if (b == a) { *value = a; return !invalid; }
         a = b;
     }
-    return a;
+    return false;
 }
 
 static Boolean settled(UInt16 seq)
 {
     UInt16 first, ack, response, last;
-    first = stable_rd(SBN_R_STATUS);
-    ack = stable_rd(SBN_R_ACK_SEQ);
-    response = stable_rd(SBN_R_RESP_SEQ);
-    last = stable_rd(SBN_R_STATUS);
-    return !invalid && !((first | last) & SBN_ST_BUSY) && ack == response &&
-           (!seq || response == seq);
+    if (!stable_rd(SBN_R_STATUS, &first) || !stable_rd(SBN_R_ACK_SEQ, &ack) ||
+        !stable_rd(SBN_R_RESP_SEQ, &response) || !stable_rd(SBN_R_STATUS, &last))
+        return false;
+    return !((first | last) & SBN_ST_BUSY) && ack == response && (!seq || response == seq);
 }
 
 static Boolean synchronize(void)
 {
     Pending p;
+    UInt16 seq;
     if (!mapping_valid() || !pending_get(&p)) return false;
     if (p.sequence) {
         if (p.base != _fn_palmos_cs1 || !settled(p.sequence) || !pending_set(0, 0))
             return false;
     }
-    if (!settled(0)) return false;
-    _fn_palmos_seq = (UInt8)stable_rd(SBN_R_RESP_SEQ);
-    return !invalid;
+    if (!settled(0) || !stable_rd(SBN_R_RESP_SEQ, &seq)) return false;
+    _fn_palmos_seq = (UInt8)seq;
+    return true;
 }
 
 UInt16 nl_cs1_probe(UInt16 *hostP, UInt16 *busyP)
@@ -203,18 +227,19 @@ UInt16 nl_cs1_probe(UInt16 *hostP, UInt16 *busyP)
     if (!supported()) return FN_ERR_NOT_FOUND;
     if (_fn_palmos_cs1 && !mapping_valid()) return FN_ERR_NOT_FOUND;
     if (!fn_palmos_open() || invalid) return FN_ERR_NOT_FOUND;
-    status = stable_rd(SBN_R_STATUS);
+    if (!stable_rd(SBN_R_STATUS, &status)) return invalid ? FN_ERR_NOT_FOUND : FN_ERR_IO;
     *hostP = !!(status & SBN_ST_HOST);
     *busyP = !!(status & SBN_ST_BUSY);
-    return invalid ? FN_ERR_NOT_FOUND : FN_OK;
+    return FN_OK;
 }
 
 UInt16 nl_cs1_begin(void)
 {
-    UInt16 host, busy, result;
+    UInt16 host, busy, status, result;
     result = nl_cs1_probe(&host, &busy);
     if (result) return result;
-    if (stable_rd(SBN_R_STATUS) & SBN_ST_LOOPBACK) return FN_ERR_NOT_READY;
+    if (!stable_rd(SBN_R_STATUS, &status)) return invalid ? FN_ERR_NOT_FOUND : FN_ERR_IO;
+    if (status & SBN_ST_LOOPBACK) return FN_ERR_NOT_READY;
     if (!synchronize()) return FN_ERR_BUSY;
     return FN_OK; /* Module presence does not assert host/Internet availability. */
 }
@@ -272,7 +297,7 @@ Boolean nl_payload_valid(const uint8_t *request, const uint8_t *response,
 uint16_t fn_palmos_exchange(const uint8_t *request, uint16_t length,
                             uint8_t *response, uint16_t capacity, uint16_t *got)
 {
-    UInt16 result;
+    UInt16 result, held;
     posted = ambiguous = 0;
     *got = 0;
     if (!synchronize() || nl_expired(started, budget)) {
@@ -284,7 +309,7 @@ uint16_t fn_palmos_exchange(const uint8_t *request, uint16_t length,
     /* The upstream reader checks every response word, even beyond capacity.
      * Reject truncation/mismatched packets before a common service uses them. */
     if (result == SBN_RES_OK && (*got < FN_HEADER_SIZE ||
-        stable_rd(SBN_R_RESP_LEN) != *got ||
+        !stable_rd(SBN_R_RESP_LEN, &held) || held != *got ||
         response[0] != request[0] || response[1] != request[1] ||
         FN_READ_LE16(response, 2) != *got ||
         fn_calc_packet_checksum(response, *got) != response[FN_CHECKSUM_OFFSET] ||

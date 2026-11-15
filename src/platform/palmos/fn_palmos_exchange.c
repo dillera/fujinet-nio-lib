@@ -21,19 +21,28 @@
  * reply is published). The reply words are covered by the check word and read
  * again when it fails; the registers that say which reply is in place and how
  * to read it are read until two reads agree, so one misread can neither fail
- * an exchange nor make it read a reply that is not there yet. */
+ * an exchange nor make it read a reply that is not there yet.
+ *
+ * A word with no two reads in a row alike, in 1 + STABLE_TRIES reads, is not
+ * read at all: that attempt at the reply ends before any reply word is taken,
+ * and a RESULT that will not settle ends the exchange without sending the
+ * request again, since it may have run. Two reads that agree are the best the
+ * bus gives, not proof: RESULT has no check word. */
 #define STABLE_TRIES 4
 
-static uint16_t read_stable(uint16_t offset)
+static uint8_t read_stable(uint16_t offset, uint16_t *value)
 {
     uint16_t a = FN_PALMOS_RD(offset), b, tries;
 
     for (tries = 0; tries < STABLE_TRIES; tries++) {
         b = FN_PALMOS_RD(offset);
-        if (b == a) break;
+        if (b == a) {
+            *value = a;
+            return 1;
+        }
         a = b;
     }
-    return a;
+    return 0;
 }
 
 /* BEGIN, the bytes two per DATA word (first one high), then CHECK over them. */
@@ -62,10 +71,11 @@ static void send_request(const uint8_t *req, uint16_t len)
 static uint8_t read_reply(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
 {
     fn_palmos_port_t port = FN_PALMOS_PORT(_fn_palmos_cs1 + SBN_R_RESP);
-    uint16_t n = read_stable(SBN_R_RESP_LEN), want = read_stable(SBN_R_RESP_CHECK);
-    uint16_t keep, pairs, words, w, check = 0;
+    uint16_t n, want, keep, pairs, words, w, check = 0;
 
-    if (n > SBN_RESP_MAX) return 0;
+    if (!read_stable(SBN_R_RESP_LEN, &n) || !read_stable(SBN_R_RESP_CHECK, &want) ||
+        n > SBN_RESP_MAX)
+        return 0;
     keep = n < cap ? n : cap;
     pairs = keep >> 1;
     words = ((n + 1) >> 1) - pairs;
@@ -100,15 +110,16 @@ static uint8_t read_reply(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
 static uint8_t read_reply_careful(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
 {
     uint16_t offset = SBN_R_RESP;
-    uint16_t n = read_stable(SBN_R_RESP_LEN), want = read_stable(SBN_R_RESP_CHECK);
-    uint16_t keep, pairs, words, w, check = 0;
+    uint16_t n, want, keep, pairs, words, w, check = 0;
 
-    if (n > SBN_RESP_MAX) return 0;
+    if (!read_stable(SBN_R_RESP_LEN, &n) || !read_stable(SBN_R_RESP_CHECK, &want) ||
+        n > SBN_RESP_MAX)
+        return 0;
     keep = n < cap ? n : cap;
     pairs = keep >> 1;
     words = ((n + 1) >> 1) - pairs;
     while (pairs--) {
-        w = read_stable(offset);
+        if (!read_stable(offset, &w)) return 0;
         offset += 2;
         check = SBN_CHECK_STEP(check, w);
         resp[0] = (uint8_t)(w >> 8);
@@ -116,14 +127,14 @@ static uint8_t read_reply_careful(uint8_t *resp, uint16_t cap, uint16_t *resp_le
         resp += 2;
     }
     if (words) {
-        w = read_stable(offset);
+        if (!read_stable(offset, &w)) return 0;
         offset += 2;
         check = SBN_CHECK_STEP(check, w);
         if (keep & 1) *resp = (uint8_t)(w >> 8);
         words--;
     }
     while (words--) {
-        w = read_stable(offset);
+        if (!read_stable(offset, &w)) return 0;
         offset += 2;
         check = SBN_CHECK_STEP(check, w);
     }
@@ -149,7 +160,8 @@ uint16_t fn_palmos_exchange(const uint8_t *req, uint16_t len, uint8_t *resp, uin
         while (FN_PALMOS_RD(SBN_R_RESP_SEQ) != _fn_palmos_seq ||
                FN_PALMOS_RD(SBN_R_RESP_SEQ) != _fn_palmos_seq)
             if (FN_PALMOS_EXPIRED(start, wait)) return FN_PALMOS_NO_ANSWER;
-        result = read_stable(SBN_R_RESULT);
+        /* Only a RESULT that settles can send the request again. */
+        if (!read_stable(SBN_R_RESULT, &result)) return FN_PALMOS_BAD_READ;
     }
     /* Only a good result has a reply to read. */
     if (result != SBN_RES_OK) return result;

@@ -99,7 +99,9 @@ is Springboard-specific. USB/serial unresolved-operation markers use separate
 state, not configuration. CS1 uses private feature NiL1 0x4e32 (the CS1 base
 with the posted sequence in its low byte): a feature write is a table update,
 not a database write, so marking each doorbell costs microseconds, and a soft
-reset clears it. Applications must never edit these markers to force a retry.
+reset clears it. A CS1 marker that cannot be read (any Feature Manager error but
+`ftrErrNoSuchFeature`) counts as unresolved. Applications must never edit these
+markers to force a retry.
 
 `NioLibResetTransport(refNum, transport, confirmation)` requires an open library,
 ABI >=1.5 and capability `0x80`. Transport must be 1, 2 or 3; confirmation must
