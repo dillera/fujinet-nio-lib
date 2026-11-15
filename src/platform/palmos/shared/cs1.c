@@ -22,10 +22,12 @@ typedef struct { UInt32 base; UInt16 sequence; } Pending;
 static UInt16 candidate_card, invalid, posted, ambiguous, last_result;
 static UInt32 started, budget;
 
-/* Bus accesses between clock reads, and how often (ticks) a running exchange
+/* Data words between clock reads, and how often (ticks) a running exchange
  * re-checks that the module is still mapped. Every exchange and doorbell
  * checks the mapping in full; checking it on every word (seven system calls)
- * cost about 1.3 ms per word, and could not close the removal race anyway. */
+ * cost about 1.3 ms per word, and could not close the removal race anyway.
+ * A register access (status polls among them) reads the clock every time, so
+ * the deadline still ends bus access within one poll. */
 #define CLOCK_EVERY 32
 static UInt16 mapped, accesses;
 static UInt32 mapped_at, recheck;
@@ -69,14 +71,15 @@ static Boolean mapping_valid(void)
     return true;
 }
 
-/* Before a bus access: the deadline and the mapping, checked in full when no
- * check has passed in this exchange, else every CLOCK_EVERY accesses once
- * recheck ticks have passed. */
-static Boolean bus_ok(void)
+/* Before a bus access: the deadline, and the mapping, checked in full when no
+ * check has passed in this exchange, else once recheck ticks have passed. A
+ * data word (a reply word, or a request word) reads the clock only every
+ * CLOCK_EVERY words; a register access reads it every time. */
+static Boolean bus_ok(Boolean data)
 {
     UInt32 now;
     if (invalid) return false;
-    if (mapped && ++accesses < CLOCK_EVERY) return true;
+    if (data && mapped && ++accesses < CLOCK_EVERY) return true;
     accesses = 0;
     now = TimGetTicks();
     if (now - started >= budget) { invalid = 1; return false; }
@@ -133,13 +136,13 @@ Err nl_cs1_reset(void)
 
 UInt16 nl_bus_read(UInt32 address)
 {
-    if (!bus_ok()) return 0;
+    if (!bus_ok(address - _fn_palmos_cs1 >= SBN_R_RESP)) return 0;
     return *(volatile UInt16 *)address;
 }
 
 void nl_bus_write(UInt32 address, UInt16 value)
 {
-    if (!bus_ok()) return;
+    if (!bus_ok(address == _fn_palmos_cs1 + SBN_W(SBN_W_DATA))) return;
     if (address == _fn_palmos_cs1 + SBN_W(SBN_W_DOORBELL)) {
         /* A doorbell checks the mapping in full, before and after the marker. */
         if (!mapping_valid()) return;
