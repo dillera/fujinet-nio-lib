@@ -181,20 +181,11 @@ void nl_bus_write(UInt32 address, UInt16 value)
     *(volatile UInt16 *)address = value;
 }
 
-/* A register read until two reads agree, as in fn_palmos_exchange.c: the
- * module answers each read from SRAM within the bus cycle, and one it answers
- * late returns another word (seen on a Prism), which must not fail or
- * misdirect an exchange. False if no two reads in a row agree, or the bus
- * refused a read: the register was not read. */
+/* fn_palmos_read_stable, and the bus must not have refused the read (the value
+ * is then not a register word). False means the register was not read. */
 static Boolean stable_rd(UInt16 offset, UInt16 *value)
 {
-    UInt16 a = FN_PALMOS_RD(offset), b, tries;
-    for (tries = 0; tries < 4; tries++) {
-        b = FN_PALMOS_RD(offset);
-        if (b == a) { *value = a; return !invalid; }
-        a = b;
-    }
-    return false;
+    return fn_palmos_read_stable(offset, value) && !invalid;
 }
 
 static Boolean settled(UInt16 seq)

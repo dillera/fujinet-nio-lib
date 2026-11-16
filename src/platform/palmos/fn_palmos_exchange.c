@@ -16,34 +16,15 @@
 #define FN_PALMOS_EXPIRED(start, wait) (TimGetTicks() - (start) > (wait))
 #endif
 
-/* The module answers each read from its SRAM within the bus cycle, and a read
- * it answers late returns another word (seen on a Prism, most often just as a
- * reply is published). The reply words are covered by the check word and read
- * again when it fails; the registers that say which reply is in place and how
- * to read it are read until two reads agree, so one misread can neither fail
- * an exchange nor make it read a reply that is not there yet.
+/* The registers that say which reply is in place and how to read it are read
+ * until two reads agree (fn_palmos_read_stable), so one misread can neither fail
+ * an exchange nor make it read a reply that is not there yet. The reply words
+ * are covered by the check word and read again when it fails.
  *
- * A word with no two reads in a row alike, in 1 + STABLE_TRIES reads, is not
- * read at all: that attempt at the reply ends before any reply word is taken,
- * and a RESULT that will not settle ends the exchange without sending the
- * request again, since it may have run. Two reads that agree are the best the
- * bus gives, not proof: RESULT has no check word. */
-#define STABLE_TRIES 4
-
-static uint8_t read_stable(uint16_t offset, uint16_t *value)
-{
-    uint16_t a = FN_PALMOS_RD(offset), b, tries;
-
-    for (tries = 0; tries < STABLE_TRIES; tries++) {
-        b = FN_PALMOS_RD(offset);
-        if (b == a) {
-            *value = a;
-            return 1;
-        }
-        a = b;
-    }
-    return 0;
-}
+ * A word that will not settle is not read at all: that attempt at the reply
+ * ends before any reply word is taken, and a RESULT that will not settle ends
+ * the exchange without sending the request again, since it may have run.
+ * RESULT has no check word, so its two agreeing reads are the best there is. */
 
 /* BEGIN, the bytes two per DATA word (first one high), then CHECK over them. */
 static void send_request(const uint8_t *req, uint16_t len)
@@ -66,21 +47,38 @@ static void send_request(const uint8_t *req, uint16_t len)
     FN_PALMOS_WR(SBN_W_CHECK, check);
 }
 
-/* Read the reply words, keep at most cap bytes, check every word. Zero if
- * the length or the check did not read back right. */
-static uint8_t read_reply(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
+/* The next reply word. The fast pass takes it from the port; the careful pass
+ * reads each word until two reads agree, since one misread word spoils a whole
+ * pass and on a Prism a fast reader (NioLib, with its checks per exchange, not
+ * per word) misread about one word in a thousand: a 1014-byte reply then failed
+ * its check on all four fast passes about one time in twenty. The first pass
+ * stays fast; only the passes after a failed check pay for the second reads. */
+static uint8_t careful_word(uint16_t *offset, uint16_t *w)
+{
+    if (!fn_palmos_read_stable(*offset, w)) return 0;
+    *offset += 2;
+    return 1;
+}
+
+#define NEXT_WORD(w) (careful ? careful_word(&offset, &(w)) : ((w) = FN_PALMOS_GET(port), 1))
+
+/* Read the reply words, keep at most cap bytes, check every word. Zero if the
+ * length or the check did not read back right, or (careful) a word did not
+ * settle. */
+static uint8_t read_reply(uint8_t *resp, uint16_t cap, uint16_t *resp_len, uint8_t careful)
 {
     fn_palmos_port_t port = FN_PALMOS_PORT(_fn_palmos_cs1 + SBN_R_RESP);
+    uint16_t offset = SBN_R_RESP;
     uint16_t n, want, keep, pairs, words, w, check = 0;
 
-    if (!read_stable(SBN_R_RESP_LEN, &n) || !read_stable(SBN_R_RESP_CHECK, &want) ||
-        n > SBN_RESP_MAX)
+    if (!fn_palmos_read_stable(SBN_R_RESP_LEN, &n) ||
+        !fn_palmos_read_stable(SBN_R_RESP_CHECK, &want) || n > SBN_RESP_MAX)
         return 0;
     keep = n < cap ? n : cap;
     pairs = keep >> 1;
     words = ((n + 1) >> 1) - pairs;
     while (pairs--) {
-        w = FN_PALMOS_GET(port);
+        if (!NEXT_WORD(w)) return 0;
         check = SBN_CHECK_STEP(check, w);
         resp[0] = (uint8_t)(w >> 8);
         resp[1] = (uint8_t)w;
@@ -88,54 +86,13 @@ static uint8_t read_reply(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
     }
     if (words) {
         /* The word with an odd last byte to keep, or the first one past cap. */
-        w = FN_PALMOS_GET(port);
+        if (!NEXT_WORD(w)) return 0;
         check = SBN_CHECK_STEP(check, w);
         if (keep & 1) *resp = (uint8_t)(w >> 8);
         words--;
     }
     while (words--) {
-        w = FN_PALMOS_GET(port);
-        check = SBN_CHECK_STEP(check, w);
-    }
-    *resp_len = keep;
-    return check == want;
-}
-
-/* read_reply, with every word read until two reads agree. One misread word
- * spoils a whole pass, and on a Prism a fast reader (NioLib with its checks
- * per exchange, not per word) misread about one word in a thousand: a 1014-byte
- * reply then failed its check on all four fast passes about one time in
- * twenty. The first pass stays fast; only the passes after a failed check pay
- * for the second reads. */
-static uint8_t read_reply_careful(uint8_t *resp, uint16_t cap, uint16_t *resp_len)
-{
-    uint16_t offset = SBN_R_RESP;
-    uint16_t n, want, keep, pairs, words, w, check = 0;
-
-    if (!read_stable(SBN_R_RESP_LEN, &n) || !read_stable(SBN_R_RESP_CHECK, &want) ||
-        n > SBN_RESP_MAX)
-        return 0;
-    keep = n < cap ? n : cap;
-    pairs = keep >> 1;
-    words = ((n + 1) >> 1) - pairs;
-    while (pairs--) {
-        if (!read_stable(offset, &w)) return 0;
-        offset += 2;
-        check = SBN_CHECK_STEP(check, w);
-        resp[0] = (uint8_t)(w >> 8);
-        resp[1] = (uint8_t)w;
-        resp += 2;
-    }
-    if (words) {
-        if (!read_stable(offset, &w)) return 0;
-        offset += 2;
-        check = SBN_CHECK_STEP(check, w);
-        if (keep & 1) *resp = (uint8_t)(w >> 8);
-        words--;
-    }
-    while (words--) {
-        if (!read_stable(offset, &w)) return 0;
-        offset += 2;
+        if (!NEXT_WORD(w)) return 0;
         check = SBN_CHECK_STEP(check, w);
     }
     *resp_len = keep;
@@ -161,12 +118,12 @@ uint16_t fn_palmos_exchange(const uint8_t *req, uint16_t len, uint8_t *resp, uin
                FN_PALMOS_RD(SBN_R_RESP_SEQ) != _fn_palmos_seq)
             if (FN_PALMOS_EXPIRED(start, wait)) return FN_PALMOS_NO_ANSWER;
         /* Only a RESULT that settles can send the request again. */
-        if (!read_stable(SBN_R_RESULT, &result)) return FN_PALMOS_BAD_READ;
+        if (!fn_palmos_read_stable(SBN_R_RESULT, &result)) return FN_PALMOS_BAD_READ;
     }
     /* Only a good result has a reply to read. */
     if (result != SBN_RES_OK) return result;
     for (tries = 0; tries <= READ_RETRIES; tries++)
-        if (tries ? read_reply_careful(resp, cap, resp_len) : read_reply(resp, cap, resp_len))
+        if (read_reply(resp, cap, resp_len, tries != 0))
             return result;
     *resp_len = 0;
     return FN_PALMOS_BAD_READ;
