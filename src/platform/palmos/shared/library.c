@@ -136,7 +136,7 @@ Err NioLibGetVersion(UInt16 refNum, NioLibVersion *v)
     (void)refNum;
     if (!v || v->size != sizeof(*v)) return nioLibErrParam;
     v->abiMajor = nioLibAbiMajor; v->abiMinor = nioLibAbiMinor;
-    v->implementation = 9; /* ABI 1.6 services; upstream transport unchanged. */
+    v->implementation = 10; /* ABI 1.6 services; serial reclaims a cradle line lent to HotSync. */
     return errNone;
 }
 
